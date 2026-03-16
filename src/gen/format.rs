@@ -155,7 +155,7 @@ fn generate_list_format(
         if is_option_type(&cursor_field.rust_type) {
             out.push_str(&format!(
                 "    if let Some(ref cursor) = data.{} {{\n\
-                 \x20       let _ = writeln!(out, \"\\n[next page: cursor={{cursor}}]\");\n\
+                 \x20       let _ = writeln!(out, \"\\n[next page: cursor={{}}\", cursor);\n\
                  \x20   }}\n",
                 cursor_field.rust_name
             ));
