@@ -509,3 +509,337 @@ in {{
 fn generate_gitignore() -> String {
     "/target\n/result\n".into()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::AuthMethod;
+
+    fn make_spec() -> ApiSpec {
+        ApiSpec {
+            name: "Pet Store".into(),
+            description: Some("A sample pet store API.".into()),
+            version: "2.0.0".into(),
+            base_url: Some("https://api.petstore.example.com/v2".into()),
+            auth: AuthMethod::Bearer,
+            operations: vec![],
+            types: vec![],
+        }
+    }
+
+    #[test]
+    fn scaffold_returns_expected_file_count() {
+        let spec = make_spec();
+        let files = generate_scaffold(&spec);
+        assert_eq!(files.len(), 9);
+    }
+
+    #[test]
+    fn scaffold_file_paths() {
+        let spec = make_spec();
+        let files = generate_scaffold(&spec);
+        let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+        assert!(paths.contains(&"Cargo.toml"));
+        assert!(paths.contains(&"src/main.rs"));
+        assert!(paths.contains(&"src/error.rs"));
+        assert!(paths.contains(&"src/config.rs"));
+        assert!(paths.contains(&"src/auth.rs"));
+        assert!(paths.contains(&"src/api/mod.rs"));
+        assert!(paths.contains(&"flake.nix"));
+        assert!(paths.contains(&"module/default.nix"));
+        assert!(paths.contains(&".gitignore"));
+    }
+
+    // -- Cargo.toml --
+
+    #[test]
+    fn cargo_toml_name() {
+        let spec = make_spec();
+        let content = generate_cargo_toml(&spec);
+        assert!(content.contains("name = \"pet_store\""));
+    }
+
+    #[test]
+    fn cargo_toml_version() {
+        let spec = make_spec();
+        let content = generate_cargo_toml(&spec);
+        assert!(content.contains("version = \"2.0.0\""));
+    }
+
+    #[test]
+    fn cargo_toml_edition() {
+        let spec = make_spec();
+        let content = generate_cargo_toml(&spec);
+        assert!(content.contains("edition = \"2024\""));
+        assert!(content.contains("rust-version = \"1.89.0\""));
+    }
+
+    #[test]
+    fn cargo_toml_dependencies() {
+        let spec = make_spec();
+        let content = generate_cargo_toml(&spec);
+        assert!(content.contains("rmcp"));
+        assert!(content.contains("reqwest"));
+        assert!(content.contains("schemars"));
+        assert!(content.contains("serde"));
+        assert!(content.contains("serde_json"));
+        assert!(content.contains("tokio"));
+        assert!(content.contains("thiserror"));
+        assert!(content.contains("clap"));
+        assert!(content.contains("urlencoding"));
+    }
+
+    #[test]
+    fn cargo_toml_release_profile() {
+        let spec = make_spec();
+        let content = generate_cargo_toml(&spec);
+        assert!(content.contains("[profile.release]"));
+        assert!(content.contains("lto = true"));
+    }
+
+    #[test]
+    fn cargo_toml_clippy_lints() {
+        let spec = make_spec();
+        let content = generate_cargo_toml(&spec);
+        assert!(content.contains("[lints.clippy]"));
+        assert!(content.contains("pedantic = \"warn\""));
+    }
+
+    #[test]
+    fn cargo_toml_description_from_spec() {
+        let spec = make_spec();
+        let content = generate_cargo_toml(&spec);
+        assert!(content.contains("A sample pet store API."));
+    }
+
+    #[test]
+    fn cargo_toml_default_description() {
+        let mut spec = make_spec();
+        spec.description = None;
+        let content = generate_cargo_toml(&spec);
+        assert!(content.contains("Rust CLI + MCP server for Pet Store"));
+    }
+
+    // -- main.rs --
+
+    #[test]
+    fn main_rs_has_cli_struct() {
+        let spec = make_spec();
+        let content = generate_main_rs(&spec);
+        assert!(content.contains("#[derive(Parser)]"));
+        assert!(content.contains("struct Cli {"));
+        assert!(content.contains("#[command(subcommand)]"));
+    }
+
+    #[test]
+    fn main_rs_has_serve_command() {
+        let spec = make_spec();
+        let content = generate_main_rs(&spec);
+        assert!(content.contains("enum Command {"));
+        assert!(content.contains("Serve,"));
+    }
+
+    #[test]
+    fn main_rs_has_tokio_main() {
+        let spec = make_spec();
+        let content = generate_main_rs(&spec);
+        assert!(content.contains("#[tokio::main]"));
+    }
+
+    #[test]
+    fn main_rs_imports_config() {
+        let spec = make_spec();
+        let content = generate_main_rs(&spec);
+        assert!(content.contains("use config::PetStoreConfig;"));
+    }
+
+    #[test]
+    fn main_rs_has_tracing_init() {
+        let spec = make_spec();
+        let content = generate_main_rs(&spec);
+        assert!(content.contains("fn init_tracing(json: bool)"));
+    }
+
+    // -- error.rs --
+
+    #[test]
+    fn error_rs_has_error_enum() {
+        let spec = make_spec();
+        let content = generate_error_rs(&spec);
+        assert!(content.contains("pub enum PetStoreError {"));
+        assert!(content.contains("Request("));
+        assert!(content.contains("Api {"));
+        assert!(content.contains("Json("));
+        assert!(content.contains("NoApiKey {"));
+    }
+
+    #[test]
+    fn error_rs_env_var_name() {
+        let spec = make_spec();
+        let content = generate_error_rs(&spec);
+        assert!(content.contains("PET_STORE_API_KEY"));
+    }
+
+    #[test]
+    fn error_rs_result_type_alias() {
+        let spec = make_spec();
+        let content = generate_error_rs(&spec);
+        assert!(content.contains("pub type Result<T> = std::result::Result<T, PetStoreError>;"));
+    }
+
+    // -- config.rs --
+
+    #[test]
+    fn config_rs_struct() {
+        let spec = make_spec();
+        let content = generate_config_rs(&spec);
+        assert!(content.contains("pub struct PetStoreConfig {"));
+        assert!(content.contains("pub api_url: String,"));
+        assert!(content.contains("pub api_key_file: PathBuf,"));
+    }
+
+    #[test]
+    fn config_rs_default_base_url() {
+        let spec = make_spec();
+        let content = generate_config_rs(&spec);
+        assert!(content.contains("https://api.petstore.example.com/v2"));
+    }
+
+    #[test]
+    fn config_rs_default_base_url_fallback() {
+        let mut spec = make_spec();
+        spec.base_url = None;
+        let content = generate_config_rs(&spec);
+        assert!(content.contains("https://api.example.com"));
+    }
+
+    #[test]
+    fn config_rs_load_method() {
+        let spec = make_spec();
+        let content = generate_config_rs(&spec);
+        assert!(content.contains("pub fn load() -> Self"));
+        assert!(content.contains("PET_STORE_CONFIG"));
+    }
+
+    #[test]
+    fn config_rs_xdg_config() {
+        let spec = make_spec();
+        let content = generate_config_rs(&spec);
+        assert!(content.contains("XDG_CONFIG_HOME"));
+        assert!(content.contains("pet_store/pet_store.yaml"));
+    }
+
+    // -- auth.rs --
+
+    #[test]
+    fn auth_rs_resolve_function() {
+        let spec = make_spec();
+        let content = generate_auth_rs(&spec);
+        assert!(content.contains("pub fn resolve_api_key("));
+        assert!(content.contains("PetStoreConfig"));
+        assert!(content.contains("PetStoreError"));
+    }
+
+    #[test]
+    fn auth_rs_env_var() {
+        let spec = make_spec();
+        let content = generate_auth_rs(&spec);
+        assert!(content.contains("PET_STORE_API_KEY"));
+    }
+
+    #[test]
+    fn auth_rs_priority_order() {
+        let spec = make_spec();
+        let content = generate_auth_rs(&spec);
+        // Check that explicit, env, and file are all present
+        assert!(content.contains("Explicit flag"));
+        assert!(content.contains("Environment variable"));
+        assert!(content.contains("File"));
+    }
+
+    #[test]
+    fn auth_rs_expand_tilde() {
+        let spec = make_spec();
+        let content = generate_auth_rs(&spec);
+        assert!(content.contains("fn expand_tilde("));
+        assert!(content.contains("strip_prefix(\"~/\")"));
+    }
+
+    // -- api/mod.rs --
+
+    #[test]
+    fn api_mod_rs_declares_types() {
+        let content = generate_api_mod_rs();
+        assert_eq!(content, "pub mod types;\n");
+    }
+
+    // -- flake.nix --
+
+    #[test]
+    fn flake_nix_app_name() {
+        let spec = make_spec();
+        let content = generate_flake_nix(&spec);
+        assert!(content.contains("pet_store"));
+        assert!(content.contains("toolName = \"pet_store\""));
+    }
+
+    #[test]
+    fn flake_nix_inputs() {
+        let spec = make_spec();
+        let content = generate_flake_nix(&spec);
+        assert!(content.contains("nixpkgs.url"));
+        assert!(content.contains("crate2nix.url"));
+        assert!(content.contains("substrate"));
+        assert!(content.contains("devenv"));
+    }
+
+    #[test]
+    fn flake_nix_rmcp_crate_override() {
+        let spec = make_spec();
+        let content = generate_flake_nix(&spec);
+        assert!(content.contains("crateOverrides"));
+        assert!(content.contains("CARGO_CRATE_NAME = \"rmcp\""));
+    }
+
+    // -- module/default.nix --
+
+    #[test]
+    fn module_nix_service_namespace() {
+        let spec = make_spec();
+        let content = generate_module_nix(&spec);
+        assert!(content.contains("services.pet_store"));
+    }
+
+    #[test]
+    fn module_nix_mcp_options() {
+        let spec = make_spec();
+        let content = generate_module_nix(&spec);
+        assert!(content.contains("mkMcpOptions"));
+        assert!(content.contains("mkMcpServerEntry"));
+    }
+
+    #[test]
+    fn module_nix_settings() {
+        let spec = make_spec();
+        let content = generate_module_nix(&spec);
+        assert!(content.contains("apiUrl"));
+        assert!(content.contains("apiKeyFile"));
+        assert!(content.contains("propagateApiKey"));
+    }
+
+    #[test]
+    fn module_nix_env_propagation() {
+        let spec = make_spec();
+        let content = generate_module_nix(&spec);
+        assert!(content.contains("PET_STORE_CONFIG"));
+    }
+
+    // -- .gitignore --
+
+    #[test]
+    fn gitignore_content() {
+        let content = generate_gitignore();
+        assert!(content.contains("/target"));
+        assert!(content.contains("/result"));
+    }
+}

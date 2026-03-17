@@ -311,3 +311,343 @@ fn is_option_type(rt: &RustType) -> bool {
 fn is_vec_type(rt: &RustType) -> bool {
     matches!(rt, RustType::Vec(_))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{ApiSpec, AuthMethod, FieldDef, HttpMethod};
+
+    fn make_field(name: &str, rust_type: RustType, required: bool) -> FieldDef {
+        FieldDef {
+            name: name.into(),
+            rust_name: heck::ToSnakeCase::to_snake_case(name),
+            rust_type,
+            required,
+            description: None,
+            default_value: None,
+        }
+    }
+
+    fn make_struct(name: &str, fields: Vec<FieldDef>) -> TypeDef {
+        TypeDef {
+            name: name.into(),
+            rust_name: heck::ToUpperCamelCase::to_upper_camel_case(name),
+            fields,
+            is_enum: false,
+            enum_variants: Vec::new(),
+            description: None,
+        }
+    }
+
+    fn make_get_op_with_response(id: &str, response_type: RustType) -> Operation {
+        Operation {
+            id: id.into(),
+            method: HttpMethod::Get,
+            path: format!("/{id}"),
+            summary: Some(format!("Get {id}")),
+            description: None,
+            parameters: vec![],
+            request_body: None,
+            response_type: Some(response_type),
+            errors: vec![],
+        }
+    }
+
+    fn make_spec(types: Vec<TypeDef>, operations: Vec<Operation>) -> ApiSpec {
+        ApiSpec {
+            name: "TestApi".into(),
+            description: None,
+            version: "1.0.0".into(),
+            base_url: None,
+            auth: AuthMethod::None,
+            operations,
+            types,
+        }
+    }
+
+    // -- Top-level generate --
+
+    #[test]
+    fn generates_imports() {
+        let spec = make_spec(vec![], vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("use crate::api::types::*;"));
+        assert!(code.contains("use std::fmt::Write;"));
+    }
+
+    #[test]
+    fn generates_truncate_helper() {
+        let spec = make_spec(vec![], vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("pub fn truncate(s: &str, max: usize) -> String"));
+    }
+
+    #[test]
+    fn generates_format_fn_for_get_operation() {
+        let item = make_struct(
+            "Item",
+            vec![
+                make_field("id", RustType::I64, true),
+                make_field("name", RustType::String, true),
+            ],
+        );
+        let op = make_get_op_with_response("list_items", RustType::Named("Item".into()));
+        let spec = make_spec(vec![item], vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("pub fn format_list_items(data: &Item) -> String"));
+    }
+
+    #[test]
+    fn skips_delete_operations() {
+        let op = Operation {
+            id: "delete_item".into(),
+            method: HttpMethod::Delete,
+            path: "/items/{id}".into(),
+            summary: None,
+            description: None,
+            parameters: vec![],
+            request_body: None,
+            response_type: Some(RustType::Value),
+            errors: vec![],
+        };
+        let spec = make_spec(vec![], vec![op]);
+        let code = generate(&spec);
+        assert!(!code.contains("format_delete_item"));
+    }
+
+    #[test]
+    fn skips_operations_with_no_response_type() {
+        let op = Operation {
+            id: "do_thing".into(),
+            method: HttpMethod::Post,
+            path: "/thing".into(),
+            summary: None,
+            description: None,
+            parameters: vec![],
+            request_body: None,
+            response_type: None,
+            errors: vec![],
+        };
+        let spec = make_spec(vec![], vec![op]);
+        let code = generate(&spec);
+        assert!(!code.contains("format_do_thing"));
+    }
+
+    #[test]
+    fn generates_list_format_for_vec_field() {
+        let pet = make_struct(
+            "Pet",
+            vec![
+                make_field("id", RustType::I64, true),
+                make_field("name", RustType::String, true),
+            ],
+        );
+        let list_resp = make_struct(
+            "PetList",
+            vec![make_field(
+                "pets",
+                RustType::Vec(Box::new(RustType::Named("Pet".into()))),
+                true,
+            )],
+        );
+        let op = make_get_op_with_response("list_pets", RustType::Named("PetList".into()));
+        let spec = make_spec(vec![pet, list_resp], vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("pub fn format_list_pets(data: &PetList) -> String"));
+        assert!(code.contains("No results found."));
+        assert!(code.contains("data.pets.len()"));
+        assert!(code.contains("for item in &data.pets"));
+    }
+
+    #[test]
+    fn generates_single_format_for_non_list() {
+        let item = make_struct(
+            "Item",
+            vec![
+                make_field("id", RustType::I64, true),
+                make_field("name", RustType::String, true),
+                make_field("tag", RustType::Option(Box::new(RustType::String)), false),
+            ],
+        );
+        let op = make_get_op_with_response("get_item", RustType::Named("Item".into()));
+        let spec = make_spec(vec![item], vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("pub fn format_get_item(data: &Item) -> String"));
+        // Required fields use direct writeln
+        assert!(code.contains("data.id"));
+        assert!(code.contains("data.name"));
+        // Optional field uses if let
+        assert!(code.contains("if let Some(ref v) = data.tag"));
+    }
+
+    #[test]
+    fn generates_generic_format_for_unknown_type() {
+        let op =
+            make_get_op_with_response("get_unknown", RustType::Named("UnknownType".into()));
+        let spec = make_spec(vec![], vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("pub fn format_get_unknown(data: &UnknownType) -> String"));
+        assert!(code.contains("{:#?}"));
+    }
+
+    #[test]
+    fn generates_generic_format_for_non_named_type() {
+        let op = make_get_op_with_response("get_raw", RustType::Value);
+        let spec = make_spec(vec![], vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("pub fn format_get_raw(data: &serde_json::Value) -> String"));
+        assert!(code.contains("{:#?}"));
+    }
+
+    #[test]
+    fn duplicate_response_type_gets_alias() {
+        let item = make_struct(
+            "Item",
+            vec![make_field("id", RustType::I64, true)],
+        );
+        let op1 = make_get_op_with_response("get_item_v1", RustType::Named("Item".into()));
+        let op2 = make_get_op_with_response("get_item_v2", RustType::Named("Item".into()));
+        let spec = make_spec(vec![item], vec![op1, op2]);
+        let code = generate(&spec);
+        // First one gets full format fn
+        assert!(code.contains("pub fn format_get_item_v1(data: &Item) -> String"));
+        // Second one should delegate to first
+        assert!(code.contains("pub fn format_get_item_v2(data: &Item) -> String"));
+        assert!(code.contains("format_get_item_v1(data)"));
+    }
+
+    #[test]
+    fn cursor_field_in_list_response() {
+        let item = make_struct("Item", vec![make_field("id", RustType::I64, true)]);
+        let list_resp = make_struct(
+            "ItemList",
+            vec![
+                make_field(
+                    "items",
+                    RustType::Vec(Box::new(RustType::Named("Item".into()))),
+                    true,
+                ),
+                make_field("cursor", RustType::Option(Box::new(RustType::String)), false),
+            ],
+        );
+        let op = make_get_op_with_response("list_items", RustType::Named("ItemList".into()));
+        let spec = make_spec(vec![item, list_resp], vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("cursor"));
+        assert!(code.contains("next page"));
+    }
+
+    // -- Helper function tests --
+
+    #[test]
+    fn field_label_converts_snake_to_title() {
+        assert_eq!(field_label("first_name"), "First Name");
+        assert_eq!(field_label("id"), "Id");
+        assert_eq!(field_label("api_key_file"), "Api Key File");
+    }
+
+    #[test]
+    fn field_label_empty_string() {
+        assert_eq!(field_label(""), "");
+    }
+
+    #[test]
+    fn is_display_field_scalars() {
+        assert!(is_display_field(&make_field("id", RustType::I64, true)));
+        assert!(is_display_field(&make_field("name", RustType::String, true)));
+        assert!(is_display_field(&make_field("active", RustType::Bool, true)));
+        assert!(is_display_field(&make_field(
+            "tag",
+            RustType::Option(Box::new(RustType::String)),
+            false
+        )));
+    }
+
+    #[test]
+    fn is_display_field_rejects_vec() {
+        assert!(!is_display_field(&make_field(
+            "items",
+            RustType::Vec(Box::new(RustType::String)),
+            true
+        )));
+    }
+
+    #[test]
+    fn is_display_field_rejects_value() {
+        assert!(!is_display_field(&make_field("data", RustType::Value, true)));
+    }
+
+    #[test]
+    fn is_option_type_tests() {
+        assert!(is_option_type(&RustType::Option(Box::new(RustType::String))));
+        assert!(!is_option_type(&RustType::String));
+    }
+
+    #[test]
+    fn is_vec_type_tests() {
+        assert!(is_vec_type(&RustType::Vec(Box::new(RustType::I64))));
+        assert!(!is_vec_type(&RustType::String));
+    }
+
+    #[test]
+    fn rust_type_to_string_all_variants() {
+        assert_eq!(rust_type_to_string(&RustType::String), "String");
+        assert_eq!(rust_type_to_string(&RustType::I64), "i64");
+        assert_eq!(rust_type_to_string(&RustType::U64), "u64");
+        assert_eq!(rust_type_to_string(&RustType::F64), "f64");
+        assert_eq!(rust_type_to_string(&RustType::Bool), "bool");
+        assert_eq!(rust_type_to_string(&RustType::Value), "serde_json::Value");
+        assert_eq!(
+            rust_type_to_string(&RustType::Vec(Box::new(RustType::String))),
+            "Vec<String>"
+        );
+        assert_eq!(
+            rust_type_to_string(&RustType::Option(Box::new(RustType::I64))),
+            "Option<i64>"
+        );
+        assert_eq!(
+            rust_type_to_string(&RustType::Named("Foo".into())),
+            "Foo"
+        );
+    }
+
+    #[test]
+    fn find_format_fn_for_type_finds_existing() {
+        let rt = RustType::Named("Item".into());
+        let op1 = make_get_op_with_response("get_item", rt.clone());
+        let op2 = make_get_op_with_response("fetch_item", rt.clone());
+        let ops = vec![op1, op2.clone()];
+        let result = find_format_fn_for_type(&rt, &ops, &op2);
+        assert_eq!(result, Some("format_get_item".into()));
+    }
+
+    #[test]
+    fn find_format_fn_for_type_none_when_no_match() {
+        let rt = RustType::Named("Item".into());
+        let op = make_get_op_with_response("get_item", rt.clone());
+        let ops = vec![op.clone()];
+        // Only one operation with that type, and it's the current one
+        let result = find_format_fn_for_type(&rt, &ops, &op);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn generates_vec_field_length_in_single_format() {
+        let item = make_struct(
+            "Stats",
+            vec![
+                make_field("count", RustType::I64, true),
+                make_field(
+                    "tags",
+                    RustType::Vec(Box::new(RustType::String)),
+                    true,
+                ),
+            ],
+        );
+        let op = make_get_op_with_response("get_stats", RustType::Named("Stats".into()));
+        let spec = make_spec(vec![item], vec![op]);
+        let code = generate(&spec);
+        // Vec fields in single format show item count
+        assert!(code.contains("data.tags.len()"));
+    }
+}

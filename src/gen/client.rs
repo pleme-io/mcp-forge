@@ -422,3 +422,397 @@ fn request_body_type_name(op: &Operation) -> String {
     use heck::ToUpperCamelCase;
     format!("{}Request", op.id.to_upper_camel_case())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{ApiSpec, AuthMethod, FieldDef, OpRequestBody};
+
+    fn make_spec(
+        name: &str,
+        auth: AuthMethod,
+        operations: Vec<Operation>,
+    ) -> ApiSpec {
+        ApiSpec {
+            name: name.into(),
+            description: None,
+            version: "1.0.0".into(),
+            base_url: Some("https://api.example.com".into()),
+            auth,
+            operations,
+            types: vec![],
+        }
+    }
+
+    fn make_get_op(id: &str, path: &str) -> Operation {
+        Operation {
+            id: id.into(),
+            method: HttpMethod::Get,
+            path: path.into(),
+            summary: Some(format!("Get {id}")),
+            description: None,
+            parameters: vec![],
+            request_body: None,
+            response_type: Some(RustType::Named("Item".into())),
+            errors: vec![],
+        }
+    }
+
+    fn make_post_op(id: &str, path: &str) -> Operation {
+        Operation {
+            id: id.into(),
+            method: HttpMethod::Post,
+            path: path.into(),
+            summary: Some(format!("Create {id}")),
+            description: None,
+            parameters: vec![],
+            request_body: Some(OpRequestBody {
+                required: true,
+                fields: vec![FieldDef {
+                    name: "name".into(),
+                    rust_name: "name".into(),
+                    rust_type: RustType::String,
+                    required: true,
+                    description: None,
+                    default_value: None,
+                }],
+                type_name: Some("CreateItemRequest".into()),
+            }),
+            response_type: Some(RustType::Named("Item".into())),
+            errors: vec![],
+        }
+    }
+
+    // -- Struct and constructor --
+
+    #[test]
+    fn generates_client_struct() {
+        let spec = make_spec("TestApi", AuthMethod::Bearer, vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("pub struct TestApiClient {"));
+        assert!(code.contains("inner: reqwest::Client,"));
+        assert!(code.contains("base_url: String,"));
+        assert!(code.contains("api_key: String,"));
+    }
+
+    #[test]
+    fn generates_constructor() {
+        let spec = make_spec("TestApi", AuthMethod::Bearer, vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("pub fn new(base_url: &str, api_key: &str)"));
+        assert!(code.contains("reqwest::Client::builder()"));
+        assert!(code.contains("timeout(std::time::Duration::from_secs(60))"));
+    }
+
+    #[test]
+    fn generates_url_helper() {
+        let spec = make_spec("TestApi", AuthMethod::None, vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("fn url(&self, path: &str) -> String"));
+    }
+
+    #[test]
+    fn generates_handle_response() {
+        let spec = make_spec("TestApi", AuthMethod::None, vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("async fn handle_response"));
+        assert!(code.contains("is_success()"));
+        assert!(code.contains("TestApiError::Api"));
+    }
+
+    // -- Auth methods --
+
+    #[test]
+    fn bearer_auth_call() {
+        assert_eq!(
+            auth_call(&AuthMethod::Bearer),
+            ".bearer_auth(&self.api_key)"
+        );
+    }
+
+    #[test]
+    fn basic_auth_call() {
+        assert_eq!(
+            auth_call(&AuthMethod::Basic),
+            ".basic_auth(&self.api_key, Option::<&str>::None)"
+        );
+    }
+
+    #[test]
+    fn api_key_header_auth_call() {
+        assert_eq!(
+            auth_call(&AuthMethod::ApiKeyHeader("X-Key".into())),
+            ".header(\"X-Key\", &self.api_key)"
+        );
+    }
+
+    #[test]
+    fn no_auth_call() {
+        assert_eq!(auth_call(&AuthMethod::None), "");
+    }
+
+    #[test]
+    fn http_helpers_include_bearer_auth() {
+        let spec = make_spec("TestApi", AuthMethod::Bearer, vec![]);
+        let code = generate(&spec);
+        assert!(code.contains(".bearer_auth(&self.api_key)"));
+    }
+
+    #[test]
+    fn http_helpers_include_api_key_header() {
+        let spec = make_spec("MyApi", AuthMethod::ApiKeyHeader("X-Api-Key".into()), vec![]);
+        let code = generate(&spec);
+        assert!(code.contains(".header(\"X-Api-Key\", &self.api_key)"));
+    }
+
+    // -- Operation methods --
+
+    #[test]
+    fn generates_get_method() {
+        let op = make_get_op("list_items", "/items");
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("pub async fn list_items("));
+        assert!(code.contains("-> Result<Item>"));
+        assert!(code.contains("self.get(\"/items\").await"));
+    }
+
+    #[test]
+    fn generates_post_method_with_body() {
+        let op = make_post_op("create_item", "/items");
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("pub async fn create_item("));
+        assert!(code.contains("req: &CreateItemRequest,"));
+        assert!(code.contains("self.post(\"/items\", req).await"));
+    }
+
+    #[test]
+    fn generates_delete_method() {
+        let op = Operation {
+            id: "delete_item".into(),
+            method: HttpMethod::Delete,
+            path: "/items/{id}".into(),
+            summary: None,
+            description: None,
+            parameters: vec![OpParameter {
+                name: "id".into(),
+                rust_name: "id".into(),
+                location: ParamLocation::Path,
+                required: true,
+                rust_type: RustType::String,
+                description: None,
+            }],
+            request_body: None,
+            response_type: Some(RustType::Value),
+            errors: vec![],
+        };
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("pub async fn delete_item("));
+        assert!(code.contains("id: &str,"));
+        assert!(code.contains("self.delete("));
+    }
+
+    #[test]
+    fn generates_path_parameter_interpolation() {
+        let op = Operation {
+            id: "get_item".into(),
+            method: HttpMethod::Get,
+            path: "/items/{itemId}".into(),
+            summary: None,
+            description: None,
+            parameters: vec![OpParameter {
+                name: "itemId".into(),
+                rust_name: "item_id".into(),
+                location: ParamLocation::Path,
+                required: true,
+                rust_type: RustType::String,
+                description: None,
+            }],
+            request_body: None,
+            response_type: Some(RustType::Named("Item".into())),
+            errors: vec![],
+        };
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("item_id: &str,"));
+        assert!(code.contains("format!(\"/items/{item_id}\")"));
+    }
+
+    #[test]
+    fn generates_query_parameters() {
+        let op = Operation {
+            id: "list_items".into(),
+            method: HttpMethod::Get,
+            path: "/items".into(),
+            summary: None,
+            description: None,
+            parameters: vec![
+                OpParameter {
+                    name: "limit".into(),
+                    rust_name: "limit".into(),
+                    location: ParamLocation::Query,
+                    required: true,
+                    rust_type: RustType::I64,
+                    description: None,
+                },
+                OpParameter {
+                    name: "cursor".into(),
+                    rust_name: "cursor".into(),
+                    location: ParamLocation::Query,
+                    required: false,
+                    rust_type: RustType::Option(Box::new(RustType::String)),
+                    description: None,
+                },
+            ],
+            request_body: None,
+            response_type: Some(RustType::Value),
+            errors: vec![],
+        };
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("limit: i64,"));
+        assert!(code.contains("cursor: Option<String>,"));
+        assert!(code.contains("urlencoding::encode"));
+    }
+
+    #[test]
+    fn generates_doc_comment_for_operation() {
+        let op = make_get_op("list_items", "/items");
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("/// GET /items"));
+        assert!(code.contains("/// Get list_items"));
+    }
+
+    #[test]
+    fn response_type_fallback_to_value() {
+        let op = Operation {
+            id: "do_thing".into(),
+            method: HttpMethod::Post,
+            path: "/thing".into(),
+            summary: None,
+            description: None,
+            parameters: vec![],
+            request_body: None,
+            response_type: None,
+            errors: vec![],
+        };
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("-> Result<serde_json::Value>"));
+    }
+
+    // -- Helper function tests --
+
+    #[test]
+    fn http_method_fn_get() {
+        assert_eq!(http_method_fn(&HttpMethod::Get, false), "get");
+    }
+
+    #[test]
+    fn http_method_fn_post_with_body() {
+        assert_eq!(http_method_fn(&HttpMethod::Post, true), "post");
+    }
+
+    #[test]
+    fn http_method_fn_post_without_body() {
+        assert_eq!(http_method_fn(&HttpMethod::Post, false), "post_empty");
+    }
+
+    #[test]
+    fn http_method_fn_put() {
+        assert_eq!(http_method_fn(&HttpMethod::Put, true), "put");
+    }
+
+    #[test]
+    fn http_method_fn_patch() {
+        assert_eq!(http_method_fn(&HttpMethod::Patch, true), "patch");
+    }
+
+    #[test]
+    fn http_method_fn_delete() {
+        assert_eq!(http_method_fn(&HttpMethod::Delete, false), "delete");
+    }
+
+    #[test]
+    fn param_type_string_required_string() {
+        let param = OpParameter {
+            name: "name".into(),
+            rust_name: "name".into(),
+            location: ParamLocation::Query,
+            required: true,
+            rust_type: RustType::String,
+            description: None,
+        };
+        assert_eq!(param_type_string(&param), "&str");
+    }
+
+    #[test]
+    fn param_type_string_required_i64() {
+        let param = OpParameter {
+            name: "limit".into(),
+            rust_name: "limit".into(),
+            location: ParamLocation::Query,
+            required: true,
+            rust_type: RustType::I64,
+            description: None,
+        };
+        assert_eq!(param_type_string(&param), "i64");
+    }
+
+    #[test]
+    fn param_type_string_optional() {
+        let param = OpParameter {
+            name: "cursor".into(),
+            rust_name: "cursor".into(),
+            location: ParamLocation::Query,
+            required: false,
+            rust_type: RustType::Option(Box::new(RustType::String)),
+            description: None,
+        };
+        assert_eq!(param_type_string(&param), "Option<String>");
+    }
+
+    #[test]
+    fn request_body_type_name_from_type_name() {
+        let op = make_post_op("create_item", "/items");
+        assert_eq!(request_body_type_name(&op), "CreateItemRequest");
+    }
+
+    #[test]
+    fn request_body_type_name_fallback() {
+        let op = Operation {
+            id: "update_item".into(),
+            method: HttpMethod::Put,
+            path: "/items".into(),
+            summary: None,
+            description: None,
+            parameters: vec![],
+            request_body: Some(OpRequestBody {
+                required: true,
+                fields: vec![],
+                type_name: None,
+            }),
+            response_type: None,
+            errors: vec![],
+        };
+        assert_eq!(request_body_type_name(&op), "UpdateItemRequest");
+    }
+
+    #[test]
+    fn client_description_included() {
+        let mut spec = make_spec("TestApi", AuthMethod::None, vec![]);
+        spec.description = Some("My test API description.".into());
+        let code = generate(&spec);
+        assert!(code.contains("My test API description."));
+    }
+
+    #[test]
+    fn client_name_pascal_cased() {
+        let spec = make_spec("my_api", AuthMethod::None, vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("pub struct MyApiClient"));
+    }
+}

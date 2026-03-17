@@ -345,3 +345,361 @@ fn escape_string(s: &str) -> String {
         .replace('"', "\\\"")
         .replace('\n', " ")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{ApiSpec, AuthMethod, FieldDef, OpRequestBody};
+
+    fn make_spec(operations: Vec<Operation>) -> ApiSpec {
+        ApiSpec {
+            name: "TestApi".into(),
+            description: Some("Test API for unit tests.".into()),
+            version: "1.0.0".into(),
+            base_url: Some("https://api.example.com".into()),
+            auth: AuthMethod::Bearer,
+            operations,
+            types: vec![],
+        }
+    }
+
+    fn make_get_op(id: &str, path: &str) -> Operation {
+        Operation {
+            id: id.into(),
+            method: HttpMethod::Get,
+            path: path.into(),
+            summary: Some(format!("Get {id}")),
+            description: None,
+            parameters: vec![],
+            request_body: None,
+            response_type: Some(RustType::Named("Item".into())),
+            errors: vec![],
+        }
+    }
+
+    // -- Top-level structure --
+
+    #[test]
+    fn generates_rmcp_imports() {
+        let spec = make_spec(vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("use rmcp::"));
+        assert!(code.contains("ServerHandler"));
+        assert!(code.contains("ToolRouter"));
+    }
+
+    #[test]
+    fn generates_mcp_struct() {
+        let spec = make_spec(vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("struct TestApiMcp {"));
+        assert!(code.contains("client: TestApiClient,"));
+        assert!(code.contains("tool_router: ToolRouter<Self>,"));
+    }
+
+    #[test]
+    fn generates_tool_router_annotation() {
+        let spec = make_spec(vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("#[tool_router]"));
+    }
+
+    #[test]
+    fn generates_server_handler_impl() {
+        let spec = make_spec(vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("#[tool_handler]"));
+        assert!(code.contains("impl ServerHandler for TestApiMcp {"));
+        assert!(code.contains("fn get_info(&self) -> ServerInfo {"));
+    }
+
+    #[test]
+    fn generates_server_instructions() {
+        let spec = make_spec(vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("Test API for unit tests."));
+    }
+
+    #[test]
+    fn generates_entry_point() {
+        let spec = make_spec(vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("pub async fn run()"));
+        assert!(code.contains("TestApiMcp::new()?"));
+        assert!(code.contains("serve(stdio())"));
+    }
+
+    #[test]
+    fn generates_constructor_with_config() {
+        let spec = make_spec(vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("fn new() -> Result<Self, String>"));
+        assert!(code.contains("TestApiConfig::load()"));
+        assert!(code.contains("auth::resolve_api_key"));
+        assert!(code.contains("TestApiClient::new"));
+    }
+
+    // -- Input structs --
+
+    #[test]
+    fn generates_input_struct_for_parameterized_op() {
+        let op = Operation {
+            id: "get_item".into(),
+            method: HttpMethod::Get,
+            path: "/items/{id}".into(),
+            summary: Some("Get an item".into()),
+            description: None,
+            parameters: vec![OpParameter {
+                name: "id".into(),
+                rust_name: "id".into(),
+                location: ParamLocation::Path,
+                required: true,
+                rust_type: RustType::String,
+                description: Some("The item ID".into()),
+            }],
+            request_body: None,
+            response_type: Some(RustType::Named("Item".into())),
+            errors: vec![],
+        };
+        let spec = make_spec(vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("struct GetItemInput {"));
+        assert!(code.contains("id: String,"));
+        assert!(code.contains("#[schemars(description = \"The item ID\")]"));
+    }
+
+    #[test]
+    fn skips_empty_input_struct() {
+        let op = make_get_op("list_items", "/items");
+        let spec = make_spec(vec![op]);
+        let code = generate(&spec);
+        // No ListItemsInput struct should be generated
+        assert!(!code.contains("ListItemsInput {"));
+        // But the tool method should still exist with serde_json::Value
+        assert!(code.contains("Parameters<serde_json::Value>"));
+    }
+
+    #[test]
+    fn generates_input_struct_with_body_fields() {
+        let op = Operation {
+            id: "create_item".into(),
+            method: HttpMethod::Post,
+            path: "/items".into(),
+            summary: Some("Create an item".into()),
+            description: None,
+            parameters: vec![],
+            request_body: Some(OpRequestBody {
+                required: true,
+                fields: vec![FieldDef {
+                    name: "name".into(),
+                    rust_name: "name".into(),
+                    rust_type: RustType::String,
+                    required: true,
+                    description: Some("Item name".into()),
+                    default_value: None,
+                }],
+                type_name: Some("CreateItemRequest".into()),
+            }),
+            response_type: Some(RustType::Named("Item".into())),
+            errors: vec![],
+        };
+        let spec = make_spec(vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("struct CreateItemInput {"));
+        assert!(code.contains("name: String,"));
+    }
+
+    // -- Tool methods --
+
+    #[test]
+    fn generates_tool_annotation_with_description() {
+        let op = make_get_op("list_items", "/items");
+        let spec = make_spec(vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("#[tool(description = \"Get list_items\")]"));
+    }
+
+    #[test]
+    fn generates_tool_method_for_get() {
+        let op = make_get_op("list_items", "/items");
+        let spec = make_spec(vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("async fn list_items("));
+        assert!(code.contains("match self.client.list_items("));
+        assert!(code.contains("format::format_list_items(&result)"));
+    }
+
+    #[test]
+    fn delete_operations_use_simple_success_message() {
+        let op = Operation {
+            id: "delete_item".into(),
+            method: HttpMethod::Delete,
+            path: "/items/{id}".into(),
+            summary: Some("Delete an item".into()),
+            description: None,
+            parameters: vec![OpParameter {
+                name: "id".into(),
+                rust_name: "id".into(),
+                location: ParamLocation::Path,
+                required: true,
+                rust_type: RustType::String,
+                description: None,
+            }],
+            request_body: None,
+            response_type: Some(RustType::Value),
+            errors: vec![],
+        };
+        let spec = make_spec(vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("Ok(_) => format!(\"Success: DELETE /items/{id}\")"));
+    }
+
+    #[test]
+    fn generates_error_handling() {
+        let op = make_get_op("list_items", "/items");
+        let spec = make_spec(vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("Err(e) => format!(\"Error: {e}\")"));
+    }
+
+    #[test]
+    fn generates_request_body_construction() {
+        let op = Operation {
+            id: "create_item".into(),
+            method: HttpMethod::Post,
+            path: "/items".into(),
+            summary: Some("Create an item".into()),
+            description: None,
+            parameters: vec![],
+            request_body: Some(OpRequestBody {
+                required: true,
+                fields: vec![
+                    FieldDef {
+                        name: "name".into(),
+                        rust_name: "name".into(),
+                        rust_type: RustType::String,
+                        required: true,
+                        description: None,
+                        default_value: None,
+                    },
+                    FieldDef {
+                        name: "count".into(),
+                        rust_name: "count".into(),
+                        rust_type: RustType::I64,
+                        required: true,
+                        description: None,
+                        default_value: None,
+                    },
+                ],
+                type_name: Some("CreateItemRequest".into()),
+            }),
+            response_type: Some(RustType::Named("Item".into())),
+            errors: vec![],
+        };
+        let spec = make_spec(vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("let req = crate::api::types::CreateItemRequest {"));
+        assert!(code.contains("name: input.name.clone(),"));
+        assert!(code.contains("count: input.count.clone(),"));
+        assert!(code.contains("&req"));
+    }
+
+    // -- Helper function tests --
+
+    #[test]
+    fn escape_string_handles_quotes() {
+        assert_eq!(escape_string("say \"hello\""), "say \\\"hello\\\"");
+    }
+
+    #[test]
+    fn escape_string_handles_backslashes() {
+        assert_eq!(escape_string("a\\b"), "a\\\\b");
+    }
+
+    #[test]
+    fn escape_string_handles_newlines() {
+        assert_eq!(escape_string("line1\nline2"), "line1 line2");
+    }
+
+    #[test]
+    fn escape_string_no_change_for_simple() {
+        assert_eq!(escape_string("simple text"), "simple text");
+    }
+
+    #[test]
+    fn input_field_type_required_string() {
+        assert_eq!(input_field_type(&RustType::String, true), "String");
+    }
+
+    #[test]
+    fn input_field_type_optional_wraps() {
+        assert_eq!(
+            input_field_type(&RustType::String, false),
+            "Option<String>"
+        );
+    }
+
+    #[test]
+    fn input_field_type_already_option_not_double_wrapped() {
+        assert_eq!(
+            input_field_type(&RustType::Option(Box::new(RustType::String)), false),
+            "Option<String>"
+        );
+    }
+
+    #[test]
+    fn rust_type_string_all_variants() {
+        assert_eq!(rust_type_string(&RustType::String), "String");
+        assert_eq!(rust_type_string(&RustType::I64), "i64");
+        assert_eq!(rust_type_string(&RustType::U64), "u64");
+        assert_eq!(rust_type_string(&RustType::F64), "f64");
+        assert_eq!(rust_type_string(&RustType::Bool), "bool");
+        assert_eq!(rust_type_string(&RustType::Value), "serde_json::Value");
+        assert_eq!(
+            rust_type_string(&RustType::Vec(Box::new(RustType::I64))),
+            "Vec<i64>"
+        );
+        assert_eq!(
+            rust_type_string(&RustType::Named("Foo".into())),
+            "Foo"
+        );
+    }
+
+    #[test]
+    fn is_option_type_true() {
+        assert!(is_option_type(&RustType::Option(Box::new(RustType::String))));
+    }
+
+    #[test]
+    fn is_option_type_false() {
+        assert!(!is_option_type(&RustType::String));
+        assert!(!is_option_type(&RustType::Vec(Box::new(RustType::String))));
+    }
+
+    #[test]
+    fn default_description_fallback() {
+        let op = Operation {
+            id: "do_thing".into(),
+            method: HttpMethod::Post,
+            path: "/thing".into(),
+            summary: None,
+            description: None,
+            parameters: vec![],
+            request_body: None,
+            response_type: None,
+            errors: vec![],
+        };
+        let spec = make_spec(vec![op]);
+        let code = generate(&spec);
+        // Fallback description: "do_thing operation"
+        assert!(code.contains("do_thing operation"));
+    }
+
+    #[test]
+    fn default_instructions_fallback() {
+        let mut spec = make_spec(vec![]);
+        spec.description = None;
+        let code = generate(&spec);
+        assert!(code.contains("TestApi MCP server"));
+    }
+}

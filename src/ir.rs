@@ -719,3 +719,683 @@ impl<'a> Converter<'a> {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::spec::OpenApiSpec;
+
+    /// Shared helper: parse a YAML spec and convert to IR.
+    fn parse_ir(yaml: &str) -> ApiSpec {
+        let spec: OpenApiSpec = serde_yaml_ng::from_str(yaml).unwrap();
+        ApiSpec::from_openapi(&spec).unwrap()
+    }
+
+    const PETSTORE_YAML: &str = r##"
+info:
+  title: Pet Store
+  description: A sample pet store API
+  version: "2.0.0"
+servers:
+  - url: https://api.petstore.example.com/v2
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      summary: List all pets
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: A list of pets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pet"
+    post:
+      operationId: createPet
+      summary: Create a pet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePetRequest"
+      responses:
+        "201":
+          description: Pet created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+  /pets/{petId}:
+    parameters:
+      - name: petId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getPet
+      summary: Get a pet by ID
+      responses:
+        "200":
+          description: A pet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "404":
+          description: Pet not found
+    delete:
+      operationId: deletePet
+      summary: Delete a pet
+      responses:
+        "204":
+          description: Pet deleted
+components:
+  schemas:
+    Pet:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        tag:
+          type: string
+        status:
+          $ref: "#/components/schemas/PetStatus"
+    PetStatus:
+      type: string
+      enum:
+        - available
+        - pending
+        - sold
+    CreatePetRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: The pet's name
+        tag:
+          type: string
+          description: Optional tag
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+"##;
+
+    // -- Top-level ApiSpec conversion --
+
+    #[test]
+    fn api_spec_name_and_version() {
+        let api = parse_ir(PETSTORE_YAML);
+        assert_eq!(api.name, "Pet Store");
+        assert_eq!(api.version, "2.0.0");
+        assert_eq!(
+            api.description.as_deref(),
+            Some("A sample pet store API")
+        );
+    }
+
+    #[test]
+    fn api_spec_base_url() {
+        let api = parse_ir(PETSTORE_YAML);
+        assert_eq!(
+            api.base_url.as_deref(),
+            Some("https://api.petstore.example.com/v2")
+        );
+    }
+
+    #[test]
+    fn api_spec_no_servers_yields_none_base_url() {
+        let yaml = r#"
+info:
+  title: NoServer
+  version: "1.0.0"
+paths: {}
+"#;
+        let api = parse_ir(yaml);
+        assert!(api.base_url.is_none());
+    }
+
+    // -- Auth detection --
+
+    #[test]
+    fn detect_bearer_auth() {
+        let api = parse_ir(PETSTORE_YAML);
+        assert_eq!(api.auth, AuthMethod::Bearer);
+    }
+
+    #[test]
+    fn detect_basic_auth() {
+        let yaml = r#"
+info:
+  title: Basic Auth
+  version: "1.0.0"
+paths: {}
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+"#;
+        let api = parse_ir(yaml);
+        assert_eq!(api.auth, AuthMethod::Basic);
+    }
+
+    #[test]
+    fn detect_api_key_header_auth() {
+        let yaml = r#"
+info:
+  title: ApiKey Auth
+  version: "1.0.0"
+paths: {}
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+"#;
+        let api = parse_ir(yaml);
+        assert_eq!(api.auth, AuthMethod::ApiKeyHeader("X-API-Key".into()));
+    }
+
+    #[test]
+    fn detect_no_auth() {
+        let yaml = r#"
+info:
+  title: No Auth
+  version: "1.0.0"
+paths: {}
+"#;
+        let api = parse_ir(yaml);
+        assert_eq!(api.auth, AuthMethod::None);
+    }
+
+    // -- Type conversion --
+
+    #[test]
+    fn types_include_all_component_schemas() {
+        let api = parse_ir(PETSTORE_YAML);
+        let type_names: Vec<&str> = api.types.iter().map(|t| t.rust_name.as_str()).collect();
+        assert!(type_names.contains(&"Pet"));
+        assert!(type_names.contains(&"PetStatus"));
+        assert!(type_names.contains(&"CreatePetRequest"));
+    }
+
+    #[test]
+    fn struct_type_has_correct_fields() {
+        let api = parse_ir(PETSTORE_YAML);
+        let pet = api.types.iter().find(|t| t.rust_name == "Pet").unwrap();
+        assert!(!pet.is_enum);
+        assert!(pet.enum_variants.is_empty());
+
+        let field_names: Vec<&str> = pet.fields.iter().map(|f| f.rust_name.as_str()).collect();
+        assert!(field_names.contains(&"id"));
+        assert!(field_names.contains(&"name"));
+        assert!(field_names.contains(&"tag"));
+        assert!(field_names.contains(&"status"));
+    }
+
+    #[test]
+    fn required_fields_are_marked() {
+        let api = parse_ir(PETSTORE_YAML);
+        let pet = api.types.iter().find(|t| t.rust_name == "Pet").unwrap();
+
+        let id_field = pet.fields.iter().find(|f| f.rust_name == "id").unwrap();
+        assert!(id_field.required);
+        assert_eq!(id_field.rust_type, RustType::I64);
+
+        let name_field = pet.fields.iter().find(|f| f.rust_name == "name").unwrap();
+        assert!(name_field.required);
+        assert_eq!(name_field.rust_type, RustType::String);
+    }
+
+    #[test]
+    fn optional_fields_get_option_type() {
+        let api = parse_ir(PETSTORE_YAML);
+        let pet = api.types.iter().find(|t| t.rust_name == "Pet").unwrap();
+
+        let tag_field = pet.fields.iter().find(|f| f.rust_name == "tag").unwrap();
+        assert!(!tag_field.required);
+        assert_eq!(tag_field.rust_type, RustType::Option(Box::new(RustType::String)));
+    }
+
+    #[test]
+    fn enum_type_is_detected() {
+        let api = parse_ir(PETSTORE_YAML);
+        let status = api.types.iter().find(|t| t.rust_name == "PetStatus").unwrap();
+        assert!(status.is_enum);
+        assert!(status.fields.is_empty());
+        assert_eq!(status.enum_variants.len(), 3);
+
+        let variant_names: Vec<&str> =
+            status.enum_variants.iter().map(|v| v.name.as_str()).collect();
+        assert_eq!(variant_names, vec!["available", "pending", "sold"]);
+    }
+
+    #[test]
+    fn enum_variant_rust_names() {
+        let api = parse_ir(PETSTORE_YAML);
+        let status = api.types.iter().find(|t| t.rust_name == "PetStatus").unwrap();
+        let rust_names: Vec<&str> =
+            status.enum_variants.iter().map(|v| v.rust_name.as_str()).collect();
+        assert_eq!(rust_names, vec!["Available", "Pending", "Sold"]);
+    }
+
+    #[test]
+    fn ref_field_resolves_to_named_type() {
+        let api = parse_ir(PETSTORE_YAML);
+        let pet = api.types.iter().find(|t| t.rust_name == "Pet").unwrap();
+        let status_field = pet.fields.iter().find(|f| f.rust_name == "status").unwrap();
+        // status is optional (not in required) and references PetStatus
+        assert_eq!(
+            status_field.rust_type,
+            RustType::Option(Box::new(RustType::Named("PetStatus".into())))
+        );
+    }
+
+    // -- Operations --
+
+    #[test]
+    fn operations_count() {
+        let api = parse_ir(PETSTORE_YAML);
+        // listPets, createPet, getPet, deletePet
+        assert_eq!(api.operations.len(), 4);
+    }
+
+    #[test]
+    fn operation_ids_are_snake_cased() {
+        let api = parse_ir(PETSTORE_YAML);
+        let ids: Vec<&str> = api.operations.iter().map(|o| o.id.as_str()).collect();
+        assert!(ids.contains(&"list_pets"));
+        assert!(ids.contains(&"create_pet"));
+        assert!(ids.contains(&"get_pet"));
+        assert!(ids.contains(&"delete_pet"));
+    }
+
+    #[test]
+    fn operation_methods() {
+        let api = parse_ir(PETSTORE_YAML);
+        let list = api.operations.iter().find(|o| o.id == "list_pets").unwrap();
+        assert_eq!(list.method, HttpMethod::Get);
+        let create = api.operations.iter().find(|o| o.id == "create_pet").unwrap();
+        assert_eq!(create.method, HttpMethod::Post);
+        let delete = api.operations.iter().find(|o| o.id == "delete_pet").unwrap();
+        assert_eq!(delete.method, HttpMethod::Delete);
+    }
+
+    #[test]
+    fn operation_paths() {
+        let api = parse_ir(PETSTORE_YAML);
+        let list = api.operations.iter().find(|o| o.id == "list_pets").unwrap();
+        assert_eq!(list.path, "/pets");
+        let get = api.operations.iter().find(|o| o.id == "get_pet").unwrap();
+        assert_eq!(get.path, "/pets/{petId}");
+    }
+
+    #[test]
+    fn operation_summary() {
+        let api = parse_ir(PETSTORE_YAML);
+        let list = api.operations.iter().find(|o| o.id == "list_pets").unwrap();
+        assert_eq!(list.summary.as_deref(), Some("List all pets"));
+    }
+
+    #[test]
+    fn operation_query_parameter() {
+        let api = parse_ir(PETSTORE_YAML);
+        let list = api.operations.iter().find(|o| o.id == "list_pets").unwrap();
+        assert_eq!(list.parameters.len(), 1);
+        let limit = &list.parameters[0];
+        assert_eq!(limit.name, "limit");
+        assert_eq!(limit.rust_name, "limit");
+        assert_eq!(limit.location, ParamLocation::Query);
+        assert!(!limit.required);
+        // Not required, so wrapped in Option
+        assert_eq!(limit.rust_type, RustType::Option(Box::new(RustType::I64)));
+    }
+
+    #[test]
+    fn operation_path_parameter_from_path_level() {
+        let api = parse_ir(PETSTORE_YAML);
+        let get = api.operations.iter().find(|o| o.id == "get_pet").unwrap();
+        let pet_id = get.parameters.iter().find(|p| p.name == "petId").unwrap();
+        assert_eq!(pet_id.location, ParamLocation::Path);
+        assert!(pet_id.required);
+        assert_eq!(pet_id.rust_type, RustType::String);
+    }
+
+    #[test]
+    fn operation_request_body() {
+        let api = parse_ir(PETSTORE_YAML);
+        let create = api.operations.iter().find(|o| o.id == "create_pet").unwrap();
+        let body = create.request_body.as_ref().unwrap();
+        assert!(body.required);
+        assert_eq!(body.type_name.as_deref(), Some("CreatePetRequest"));
+        assert_eq!(body.fields.len(), 2);
+    }
+
+    #[test]
+    fn operation_no_request_body() {
+        let api = parse_ir(PETSTORE_YAML);
+        let list = api.operations.iter().find(|o| o.id == "list_pets").unwrap();
+        assert!(list.request_body.is_none());
+    }
+
+    #[test]
+    fn operation_response_type() {
+        let api = parse_ir(PETSTORE_YAML);
+        let get = api.operations.iter().find(|o| o.id == "get_pet").unwrap();
+        assert_eq!(
+            get.response_type,
+            Some(RustType::Named("Pet".into()))
+        );
+    }
+
+    #[test]
+    fn operation_array_response_type() {
+        let api = parse_ir(PETSTORE_YAML);
+        let list = api.operations.iter().find(|o| o.id == "list_pets").unwrap();
+        assert_eq!(
+            list.response_type,
+            Some(RustType::Vec(Box::new(RustType::Named("Pet".into()))))
+        );
+    }
+
+    #[test]
+    fn operation_no_response_type_for_204() {
+        let api = parse_ir(PETSTORE_YAML);
+        let delete = api.operations.iter().find(|o| o.id == "delete_pet").unwrap();
+        // 204 has no content, so response_type should be None
+        assert!(delete.response_type.is_none());
+    }
+
+    #[test]
+    fn operation_error_responses() {
+        let api = parse_ir(PETSTORE_YAML);
+        let get = api.operations.iter().find(|o| o.id == "get_pet").unwrap();
+        assert_eq!(get.errors.len(), 1);
+        assert_eq!(get.errors[0].status_code, "404");
+        assert_eq!(
+            get.errors[0].description.as_deref(),
+            Some("Pet not found")
+        );
+    }
+
+    // -- HttpMethod Display --
+
+    #[test]
+    fn http_method_display() {
+        assert_eq!(format!("{}", HttpMethod::Get), "GET");
+        assert_eq!(format!("{}", HttpMethod::Post), "POST");
+        assert_eq!(format!("{}", HttpMethod::Put), "PUT");
+        assert_eq!(format!("{}", HttpMethod::Delete), "DELETE");
+        assert_eq!(format!("{}", HttpMethod::Patch), "PATCH");
+    }
+
+    // -- RustType Display --
+
+    #[test]
+    fn rust_type_display_primitives() {
+        assert_eq!(format!("{}", RustType::String), "String");
+        assert_eq!(format!("{}", RustType::I64), "i64");
+        assert_eq!(format!("{}", RustType::U64), "u64");
+        assert_eq!(format!("{}", RustType::F64), "f64");
+        assert_eq!(format!("{}", RustType::Bool), "bool");
+        assert_eq!(format!("{}", RustType::Value), "serde_json::Value");
+    }
+
+    #[test]
+    fn rust_type_display_vec() {
+        let vec_type = RustType::Vec(Box::new(RustType::String));
+        assert_eq!(format!("{vec_type}"), "Vec<String>");
+    }
+
+    #[test]
+    fn rust_type_display_option() {
+        let opt_type = RustType::Option(Box::new(RustType::I64));
+        assert_eq!(format!("{opt_type}"), "Option<i64>");
+    }
+
+    #[test]
+    fn rust_type_display_named() {
+        let named = RustType::Named("Pet".into());
+        assert_eq!(format!("{named}"), "Pet");
+    }
+
+    #[test]
+    fn rust_type_display_nested() {
+        let nested = RustType::Option(Box::new(RustType::Vec(Box::new(RustType::Named(
+            "Pet".into(),
+        )))));
+        assert_eq!(format!("{nested}"), "Option<Vec<Pet>>");
+    }
+
+    // -- Schema type mapping --
+
+    #[test]
+    fn schema_type_integer_default_is_i64() {
+        let yaml = r#"
+info:
+  title: IntegerTest
+  version: "1.0.0"
+paths:
+  /test:
+    get:
+      operationId: test
+      parameters:
+        - name: count
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: ok
+"#;
+        let api = parse_ir(yaml);
+        let op = &api.operations[0];
+        let param = &op.parameters[0];
+        assert_eq!(param.rust_type, RustType::I64);
+    }
+
+    #[test]
+    fn schema_type_number_is_f64() {
+        let yaml = r#"
+info:
+  title: NumberTest
+  version: "1.0.0"
+paths:
+  /test:
+    get:
+      operationId: test
+      parameters:
+        - name: amount
+          in: query
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: ok
+"#;
+        let api = parse_ir(yaml);
+        let param = &api.operations[0].parameters[0];
+        assert_eq!(param.rust_type, RustType::F64);
+    }
+
+    #[test]
+    fn schema_type_boolean() {
+        let yaml = r#"
+info:
+  title: BoolTest
+  version: "1.0.0"
+paths:
+  /test:
+    get:
+      operationId: test
+      parameters:
+        - name: active
+          in: query
+          required: true
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: ok
+"#;
+        let api = parse_ir(yaml);
+        let param = &api.operations[0].parameters[0];
+        assert_eq!(param.rust_type, RustType::Bool);
+    }
+
+    // -- allOf merging --
+
+    #[test]
+    fn all_of_merges_properties() {
+        let yaml = r##"
+info:
+  title: AllOf Test
+  version: "1.0.0"
+paths: {}
+components:
+  schemas:
+    Base:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: integer
+    Extended:
+      allOf:
+        - $ref: "#/components/schemas/Base"
+        - type: object
+          required:
+            - extra
+          properties:
+            extra:
+              type: string
+"##;
+        let api = parse_ir(yaml);
+        let extended = api.types.iter().find(|t| t.rust_name == "Extended").unwrap();
+        let field_names: Vec<&str> =
+            extended.fields.iter().map(|f| f.rust_name.as_str()).collect();
+        assert!(field_names.contains(&"id"));
+        assert!(field_names.contains(&"extra"));
+
+        let id = extended.fields.iter().find(|f| f.rust_name == "id").unwrap();
+        assert!(id.required);
+        let extra = extended.fields.iter().find(|f| f.rust_name == "extra").unwrap();
+        assert!(extra.required);
+    }
+
+    // -- Generated operation ID fallback --
+
+    #[test]
+    fn operation_without_operation_id_gets_generated_id() {
+        let yaml = r#"
+info:
+  title: NoId
+  version: "1.0.0"
+paths:
+  /items:
+    get:
+      summary: List items
+      responses:
+        "200":
+          description: ok
+"#;
+        let api = parse_ir(yaml);
+        assert_eq!(api.operations.len(), 1);
+        // Should be generated from method + path
+        let op = &api.operations[0];
+        assert!(!op.id.is_empty());
+        // The pattern is "get__items" from "get_/items"
+        assert!(op.id.contains("get"), "generated id should contain method");
+    }
+
+    // -- Inline object in request body --
+
+    #[test]
+    fn inline_request_body_creates_type() {
+        let yaml = r#"
+info:
+  title: InlineBody
+  version: "1.0.0"
+paths:
+  /items:
+    post:
+      operationId: createItem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                count:
+                  type: integer
+      responses:
+        "201":
+          description: created
+"#;
+        let api = parse_ir(yaml);
+        let create = api.operations.iter().find(|o| o.id == "create_item").unwrap();
+        let body = create.request_body.as_ref().unwrap();
+        // An inline body should get a generated type name
+        assert!(body.type_name.is_some());
+        assert_eq!(body.fields.len(), 2);
+    }
+
+    // -- No duplicate types --
+
+    #[test]
+    fn no_duplicate_type_definitions() {
+        let api = parse_ir(PETSTORE_YAML);
+        let mut names: Vec<&str> = api.types.iter().map(|t| t.rust_name.as_str()).collect();
+        let len_before = names.len();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), len_before, "duplicate type definitions found");
+    }
+
+    // -- Field descriptions --
+
+    #[test]
+    fn field_descriptions_are_preserved() {
+        let api = parse_ir(PETSTORE_YAML);
+        let create_req = api
+            .types
+            .iter()
+            .find(|t| t.rust_name == "CreatePetRequest")
+            .unwrap();
+        let name_field = create_req
+            .fields
+            .iter()
+            .find(|f| f.rust_name == "name")
+            .unwrap();
+        assert_eq!(name_field.description.as_deref(), Some("The pet's name"));
+    }
+}

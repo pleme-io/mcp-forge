@@ -272,3 +272,386 @@ fn is_rust_keyword(name: &str) -> bool {
             | "dyn"
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{
+        ApiSpec, AuthMethod, EnumVariant, FieldDef, HttpMethod, Operation, RustType, TypeDef,
+    };
+
+    /// Build a minimal `ApiSpec` with the given types and operations.
+    fn make_spec(types: Vec<TypeDef>, operations: Vec<Operation>) -> ApiSpec {
+        ApiSpec {
+            name: "TestApi".into(),
+            description: None,
+            version: "1.0.0".into(),
+            base_url: None,
+            auth: AuthMethod::None,
+            operations,
+            types,
+        }
+    }
+
+    fn make_field(name: &str, rust_type: RustType, required: bool) -> FieldDef {
+        FieldDef {
+            name: name.into(),
+            rust_name: heck::ToSnakeCase::to_snake_case(name),
+            rust_type,
+            required,
+            description: None,
+            default_value: None,
+        }
+    }
+
+    fn make_struct(name: &str, fields: Vec<FieldDef>) -> TypeDef {
+        TypeDef {
+            name: name.into(),
+            rust_name: heck::ToUpperCamelCase::to_upper_camel_case(name),
+            fields,
+            is_enum: false,
+            enum_variants: Vec::new(),
+            description: None,
+        }
+    }
+
+    fn make_enum(name: &str, variants: Vec<&str>) -> TypeDef {
+        TypeDef {
+            name: name.into(),
+            rust_name: heck::ToUpperCamelCase::to_upper_camel_case(name),
+            fields: Vec::new(),
+            is_enum: true,
+            enum_variants: variants
+                .into_iter()
+                .map(|v| EnumVariant {
+                    name: v.into(),
+                    rust_name: heck::ToUpperCamelCase::to_upper_camel_case(v),
+                })
+                .collect(),
+            description: None,
+        }
+    }
+
+    #[test]
+    fn generate_empty_spec_produces_import() {
+        let spec = make_spec(vec![], vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("use serde::{Deserialize, Serialize};"));
+    }
+
+    #[test]
+    fn generate_struct_with_required_fields() {
+        let pet = make_struct(
+            "Pet",
+            vec![
+                make_field("id", RustType::I64, true),
+                make_field("name", RustType::String, true),
+            ],
+        );
+        let spec = make_spec(vec![pet], vec![]);
+        let code = generate(&spec);
+
+        assert!(code.contains("pub struct Pet {"));
+        assert!(code.contains("pub id: i64,"));
+        assert!(code.contains("pub name: String,"));
+    }
+
+    #[test]
+    fn generate_struct_with_optional_field() {
+        let pet = make_struct(
+            "Pet",
+            vec![make_field("tag", RustType::Option(Box::new(RustType::String)), false)],
+        );
+        let spec = make_spec(vec![pet], vec![]);
+        let code = generate(&spec);
+
+        assert!(code.contains("pub tag: Option<String>,"));
+        assert!(
+            code.contains("skip_serializing_if"),
+            "optional fields should have skip_serializing_if"
+        );
+    }
+
+    #[test]
+    fn generate_struct_derive_macros() {
+        let item = make_struct("Item", vec![]);
+        let spec = make_spec(vec![item], vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("#[derive(Debug, Clone, Serialize, Deserialize)]"));
+    }
+
+    #[test]
+    fn generate_enum_with_variants() {
+        let status = make_enum("PetStatus", vec!["available", "pending", "sold"]);
+        let spec = make_spec(vec![status], vec![]);
+        let code = generate(&spec);
+
+        assert!(code.contains("pub enum PetStatus {"));
+        assert!(code.contains("Available,"));
+        assert!(code.contains("Pending,"));
+        assert!(code.contains("Sold,"));
+        assert!(
+            code.contains("#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]"),
+            "enums should derive PartialEq + Eq"
+        );
+    }
+
+    #[test]
+    fn generate_enum_display_impl() {
+        let status = make_enum("Status", vec!["active", "inactive"]);
+        let spec = make_spec(vec![status], vec![]);
+        let code = generate(&spec);
+
+        assert!(code.contains("impl std::fmt::Display for Status {"));
+        assert!(code.contains("Self::Active => write!(f, \"active\")"));
+        assert!(code.contains("Self::Inactive => write!(f, \"inactive\")"));
+    }
+
+    #[test]
+    fn generate_enum_screaming_snake_case_rename() {
+        let mode = TypeDef {
+            name: "Mode".into(),
+            rust_name: "Mode".into(),
+            fields: Vec::new(),
+            is_enum: true,
+            enum_variants: vec![
+                EnumVariant {
+                    name: "READ_ONLY".into(),
+                    rust_name: "ReadOnly".into(),
+                },
+                EnumVariant {
+                    name: "READ_WRITE".into(),
+                    rust_name: "ReadWrite".into(),
+                },
+            ],
+            description: None,
+        };
+        let spec = make_spec(vec![mode], vec![]);
+        let code = generate(&spec);
+        assert!(
+            code.contains("SCREAMING_SNAKE_CASE"),
+            "all-uppercase+underscore variants should get SCREAMING_SNAKE_CASE rename"
+        );
+    }
+
+    #[test]
+    fn generate_enum_lowercase_rename() {
+        let prio = TypeDef {
+            name: "Priority".into(),
+            rust_name: "Priority".into(),
+            fields: Vec::new(),
+            is_enum: true,
+            enum_variants: vec![
+                EnumVariant {
+                    name: "low".into(),
+                    rust_name: "Low".into(),
+                },
+                EnumVariant {
+                    name: "high".into(),
+                    rust_name: "High".into(),
+                },
+            ],
+            description: None,
+        };
+        let spec = make_spec(vec![prio], vec![]);
+        let code = generate(&spec);
+        assert!(
+            code.contains("lowercase"),
+            "all-lowercase variants should get lowercase rename"
+        );
+    }
+
+    #[test]
+    fn generate_struct_with_doc_comment() {
+        let mut item = make_struct("Item", vec![]);
+        item.description = Some("A store item.".into());
+        let spec = make_spec(vec![item], vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("/// A store item."));
+    }
+
+    #[test]
+    fn generate_field_with_doc_comment() {
+        let mut field = make_field("name", RustType::String, true);
+        field.description = Some("The item name.".into());
+        let item = make_struct("Item", vec![field]);
+        let spec = make_spec(vec![item], vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("/// The item name."));
+    }
+
+    #[test]
+    fn generate_response_type_gets_flatten_extra() {
+        let pet = make_struct(
+            "Pet",
+            vec![make_field("id", RustType::I64, true)],
+        );
+        let op = Operation {
+            id: "get_pet".into(),
+            method: HttpMethod::Get,
+            path: "/pets/{id}".into(),
+            summary: None,
+            description: None,
+            parameters: vec![],
+            request_body: None,
+            response_type: Some(RustType::Named("Pet".into())),
+            errors: vec![],
+        };
+        let spec = make_spec(vec![pet], vec![op]);
+        let code = generate(&spec);
+
+        assert!(
+            code.contains("#[serde(flatten)]"),
+            "response types should get flatten extra field"
+        );
+        assert!(code.contains("pub extra: serde_json::Value,"));
+    }
+
+    #[test]
+    fn non_response_type_no_flatten() {
+        let req = make_struct(
+            "CreatePetRequest",
+            vec![make_field("name", RustType::String, true)],
+        );
+        let spec = make_spec(vec![req], vec![]);
+        let code = generate(&spec);
+        assert!(
+            !code.contains("flatten"),
+            "non-response types should not have flatten"
+        );
+    }
+
+    #[test]
+    fn generate_vec_field() {
+        let item = make_struct(
+            "ListResp",
+            vec![make_field(
+                "items",
+                RustType::Vec(Box::new(RustType::String)),
+                true,
+            )],
+        );
+        let spec = make_spec(vec![item], vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("pub items: Vec<String>,"));
+    }
+
+    #[test]
+    fn camel_case_fields_get_rename_all() {
+        let item = TypeDef {
+            name: "Item".into(),
+            rust_name: "Item".into(),
+            fields: vec![FieldDef {
+                name: "firstName".into(),
+                rust_name: "first_name".into(),
+                rust_type: RustType::String,
+                required: true,
+                description: None,
+                default_value: None,
+            }],
+            is_enum: false,
+            enum_variants: vec![],
+            description: None,
+        };
+        let spec = make_spec(vec![item], vec![]);
+        let code = generate(&spec);
+        assert!(
+            code.contains("camelCase"),
+            "fields with camelCase names should trigger rename_all"
+        );
+    }
+
+    #[test]
+    fn rust_keyword_field_is_escaped() {
+        let item = make_struct("Item", vec![]);
+        let mut item_with_keyword = item;
+        item_with_keyword.fields.push(FieldDef {
+            name: "type".into(),
+            rust_name: "type".into(),
+            rust_type: RustType::String,
+            required: true,
+            description: None,
+            default_value: None,
+        });
+        let spec = make_spec(vec![item_with_keyword], vec![]);
+        let code = generate(&spec);
+        assert!(
+            code.contains("pub r#type: String,"),
+            "Rust keywords should be escaped with r#"
+        );
+    }
+
+    #[test]
+    fn is_rust_keyword_detects_common_keywords() {
+        assert!(is_rust_keyword("type"));
+        assert!(is_rust_keyword("match"));
+        assert!(is_rust_keyword("async"));
+        assert!(is_rust_keyword("self"));
+        assert!(!is_rust_keyword("name"));
+        assert!(!is_rust_keyword("id"));
+    }
+
+    #[test]
+    fn rust_type_to_string_all_variants() {
+        assert_eq!(rust_type_to_string(&RustType::String), "String");
+        assert_eq!(rust_type_to_string(&RustType::I64), "i64");
+        assert_eq!(rust_type_to_string(&RustType::U64), "u64");
+        assert_eq!(rust_type_to_string(&RustType::F64), "f64");
+        assert_eq!(rust_type_to_string(&RustType::Bool), "bool");
+        assert_eq!(rust_type_to_string(&RustType::Value), "serde_json::Value");
+        assert_eq!(
+            rust_type_to_string(&RustType::Vec(Box::new(RustType::I64))),
+            "Vec<i64>"
+        );
+        assert_eq!(
+            rust_type_to_string(&RustType::Option(Box::new(RustType::Bool))),
+            "Option<bool>"
+        );
+        assert_eq!(
+            rust_type_to_string(&RustType::Named("Foo".into())),
+            "Foo"
+        );
+    }
+
+    #[test]
+    fn is_camel_to_snake_correct() {
+        assert!(is_camel_to_snake("firstName", "first_name"));
+        assert!(is_camel_to_snake("id", "id"));
+        assert!(!is_camel_to_snake("some_field", "somefield"));
+    }
+
+    #[test]
+    fn infer_enum_rename_none_for_mixed_case() {
+        let mixed = TypeDef {
+            name: "Mixed".into(),
+            rust_name: "Mixed".into(),
+            fields: Vec::new(),
+            is_enum: true,
+            enum_variants: vec![
+                EnumVariant {
+                    name: "Active".into(),
+                    rust_name: "Active".into(),
+                },
+                EnumVariant {
+                    name: "inactive".into(),
+                    rust_name: "Inactive".into(),
+                },
+            ],
+            description: None,
+        };
+        assert!(infer_enum_rename(&mixed).is_none());
+    }
+
+    #[test]
+    fn infer_enum_rename_empty_variants() {
+        let empty = TypeDef {
+            name: "Empty".into(),
+            rust_name: "Empty".into(),
+            fields: Vec::new(),
+            is_enum: true,
+            enum_variants: vec![],
+            description: None,
+        };
+        assert!(infer_enum_rename(&empty).is_none());
+    }
+}
