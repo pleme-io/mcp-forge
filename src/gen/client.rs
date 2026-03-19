@@ -76,7 +76,7 @@ pub fn generate(spec: &ApiSpec) -> String {
     // Private HTTP method helpers (get, post, put, patch, delete)
     generate_http_helpers(&mut out, &spec.auth, &error_name);
 
-    // Response handler
+    // Response handler (JSON body)
     out.push_str(&format!(
         "    async fn handle_response<T: serde::de::DeserializeOwned>(\n\
          \x20       resp: reqwest::Response,\n\
@@ -88,6 +88,21 @@ pub fn generate(spec: &ApiSpec) -> String {
          \x20       }}\n\
          \x20       let text = resp.text().await.map_err({error_name}::Request)?;\n\
          \x20       serde_json::from_str(&text).map_err({error_name}::Json)\n\
+         \x20   }}\n\
+         \n"
+    ));
+
+    // Response handler (empty body, e.g. 204 No Content)
+    out.push_str(&format!(
+        "    async fn handle_empty_response(\n\
+         \x20       resp: reqwest::Response,\n\
+         \x20   ) -> Result<()> {{\n\
+         \x20       let status = resp.status().as_u16();\n\
+         \x20       if !resp.status().is_success() {{\n\
+         \x20           let body = resp.text().await.unwrap_or_default();\n\
+         \x20           return Err({error_name}::Api {{ status, body }});\n\
+         \x20       }}\n\
+         \x20       Ok(())\n\
          \x20   }}\n\
          \n"
     ));
@@ -209,7 +224,7 @@ fn generate_http_helpers(out: &mut String, auth: &AuthMethod, error_name: &str) 
          \n"
     ));
 
-    // DELETE
+    // DELETE (with response body)
     out.push_str(&format!(
         "    async fn delete<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {{\n\
          \x20       let resp = self\n\
@@ -220,6 +235,111 @@ fn generate_http_helpers(out: &mut String, auth: &AuthMethod, error_name: &str) 
          \x20           .await\n\
          \x20           .map_err({error_name}::Request)?;\n\
          \x20       Self::handle_response(resp).await\n\
+         \x20   }}\n\
+         \n"
+    ));
+
+    // DELETE (no response body, e.g. 204)
+    out.push_str(&format!(
+        "    async fn delete_empty(&self, path: &str) -> Result<()> {{\n\
+         \x20       let resp = self\n\
+         \x20           .inner\n\
+         \x20           .delete(&self.url(path))\n\
+         \x20           {auth_call}\n\
+         \x20           .send()\n\
+         \x20           .await\n\
+         \x20           .map_err({error_name}::Request)?;\n\
+         \x20       Self::handle_empty_response(resp).await\n\
+         \x20   }}\n\
+         \n"
+    ));
+
+    // POST (no body, no response, e.g. 204)
+    out.push_str(&format!(
+        "    async fn post_empty_no_response(&self, path: &str) -> Result<()> {{\n\
+         \x20       let resp = self\n\
+         \x20           .inner\n\
+         \x20           .post(&self.url(path))\n\
+         \x20           {auth_call}\n\
+         \x20           .send()\n\
+         \x20           .await\n\
+         \x20           .map_err({error_name}::Request)?;\n\
+         \x20       Self::handle_empty_response(resp).await\n\
+         \x20   }}\n\
+         \n"
+    ));
+
+    // POST (with body, no response, e.g. 204)
+    out.push_str(&format!(
+        "    async fn post_no_response<B: serde::Serialize>(\n\
+         \x20       &self,\n\
+         \x20       path: &str,\n\
+         \x20       body: &B,\n\
+         \x20   ) -> Result<()> {{\n\
+         \x20       let resp = self\n\
+         \x20           .inner\n\
+         \x20           .post(&self.url(path))\n\
+         \x20           {auth_call}\n\
+         \x20           .json(body)\n\
+         \x20           .send()\n\
+         \x20           .await\n\
+         \x20           .map_err({error_name}::Request)?;\n\
+         \x20       Self::handle_empty_response(resp).await\n\
+         \x20   }}\n\
+         \n"
+    ));
+
+    // PUT (with body, no response, e.g. 204)
+    out.push_str(&format!(
+        "    async fn put_no_response<B: serde::Serialize>(\n\
+         \x20       &self,\n\
+         \x20       path: &str,\n\
+         \x20       body: &B,\n\
+         \x20   ) -> Result<()> {{\n\
+         \x20       let resp = self\n\
+         \x20           .inner\n\
+         \x20           .put(&self.url(path))\n\
+         \x20           {auth_call}\n\
+         \x20           .json(body)\n\
+         \x20           .send()\n\
+         \x20           .await\n\
+         \x20           .map_err({error_name}::Request)?;\n\
+         \x20       Self::handle_empty_response(resp).await\n\
+         \x20   }}\n\
+         \n"
+    ));
+
+    // PATCH (with body, no response, e.g. 204)
+    out.push_str(&format!(
+        "    async fn patch_no_response<B: serde::Serialize>(\n\
+         \x20       &self,\n\
+         \x20       path: &str,\n\
+         \x20       body: &B,\n\
+         \x20   ) -> Result<()> {{\n\
+         \x20       let resp = self\n\
+         \x20           .inner\n\
+         \x20           .patch(&self.url(path))\n\
+         \x20           {auth_call}\n\
+         \x20           .json(body)\n\
+         \x20           .send()\n\
+         \x20           .await\n\
+         \x20           .map_err({error_name}::Request)?;\n\
+         \x20       Self::handle_empty_response(resp).await\n\
+         \x20   }}\n\
+         \n"
+    ));
+
+    // GET (no response body)
+    out.push_str(&format!(
+        "    async fn get_empty(&self, path: &str) -> Result<()> {{\n\
+         \x20       let resp = self\n\
+         \x20           .inner\n\
+         \x20           .get(&self.url(path))\n\
+         \x20           {auth_call}\n\
+         \x20           .send()\n\
+         \x20           .await\n\
+         \x20           .map_err({error_name}::Request)?;\n\
+         \x20       Self::handle_empty_response(resp).await\n\
          \x20   }}\n\
          \n"
     ));
@@ -241,13 +361,17 @@ fn generate_operation_method(out: &mut String, op: &Operation) {
         .collect();
 
     let has_body = op.request_body.is_some();
+    let has_response = op.response_type.is_some();
 
     // Determine response type string
-    let response_type = op
-        .response_type
-        .as_ref()
-        .map(rust_type_to_string)
-        .unwrap_or_else(|| "serde_json::Value".into());
+    let response_type = if has_response {
+        op.response_type
+            .as_ref()
+            .map(rust_type_to_string)
+            .unwrap_or_else(|| "serde_json::Value".into())
+    } else {
+        "()".into()
+    };
 
     // Doc comment
     out.push_str(&format!("    /// {} {}\n", op.method, op.path));
@@ -278,6 +402,13 @@ fn generate_operation_method(out: &mut String, op: &Operation) {
 
     out.push_str(&format!("    ) -> Result<{response_type}> {{\n"));
 
+    // Select the appropriate internal method name
+    let method_fn = if has_response {
+        http_method_fn(&op.method, has_body)
+    } else {
+        http_method_fn_empty(&op.method, has_body)
+    };
+
     // Build path string with interpolation
     let has_queries = !query_params.is_empty();
     if path_params.is_empty() && !has_queries {
@@ -285,14 +416,12 @@ fn generate_operation_method(out: &mut String, op: &Operation) {
         if has_body {
             out.push_str(&format!(
                 "        self.{}(\"{}\", req).await\n",
-                http_method_fn(&op.method, has_body),
-                op.path
+                method_fn, op.path
             ));
         } else {
             out.push_str(&format!(
                 "        self.{}(\"{}\").await\n",
-                http_method_fn(&op.method, has_body),
-                op.path
+                method_fn, op.path
             ));
         }
     } else {
@@ -307,40 +436,43 @@ fn generate_operation_method(out: &mut String, op: &Operation) {
         }
 
         if has_queries {
-            // Build path with query parameters
+            // Build path with query parameters using runtime separator tracking
             out.push_str(&format!(
                 "        let mut path = format!(\"{path_template}\");\n"
             ));
+            out.push_str("        let mut has_query = false;\n");
 
-            let mut first_query = true;
             for param in &query_params {
-                let separator = if first_query { '?' } else { '&' };
-                first_query = false;
-
                 if is_option_type(&param.rust_type) {
                     out.push_str(&format!(
                         "        if let Some(ref v) = {} {{\n\
-                         \x20           path.push_str(&format!(\"{}{}={{}}\", urlencoding::encode(&v.to_string())));\n\
+                         \x20           path.push_str(if has_query {{ \"&\" }} else {{ \"?\" }});\n\
+                         \x20           path.push_str(&format!(\"{}={{}}\", urlencoding::encode(&v.to_string())));\n\
+                         \x20           has_query = true;\n\
                          \x20       }}\n",
-                        param.rust_name, separator, param.name
+                        param.rust_name, param.name
                     ));
                 } else {
+                    out.push_str(
+                        "        path.push_str(if has_query { \"&\" } else { \"?\" });\n",
+                    );
                     out.push_str(&format!(
-                        "        path.push_str(&format!(\"{}{}={{}}\", urlencoding::encode(&{}.to_string())));\n",
-                        separator, param.name, param.rust_name
+                        "        path.push_str(&format!(\"{}={{}}\", urlencoding::encode(&{}.to_string())));\n",
+                        param.name, param.rust_name
                     ));
+                    out.push_str("        has_query = true;\n");
                 }
             }
 
             if has_body {
                 out.push_str(&format!(
                     "        self.{}(&path, req).await\n",
-                    http_method_fn(&op.method, has_body)
+                    method_fn
                 ));
             } else {
                 out.push_str(&format!(
                     "        self.{}(&path).await\n",
-                    http_method_fn(&op.method, has_body)
+                    method_fn
                 ));
             }
         } else {
@@ -348,12 +480,12 @@ fn generate_operation_method(out: &mut String, op: &Operation) {
             if has_body {
                 out.push_str(&format!(
                     "        self.{}(&format!(\"{path_template}\"), req).await\n",
-                    http_method_fn(&op.method, has_body)
+                    method_fn
                 ));
             } else {
                 out.push_str(&format!(
                     "        self.{}(&format!(\"{path_template}\")).await\n",
-                    http_method_fn(&op.method, has_body)
+                    method_fn
                 ));
             }
         }
@@ -362,6 +494,7 @@ fn generate_operation_method(out: &mut String, op: &Operation) {
     out.push_str("    }\n\n");
 }
 
+/// Select the private helper method name for operations that return a response body.
 fn http_method_fn(method: &HttpMethod, has_body: bool) -> &'static str {
     match method {
         HttpMethod::Get => "get",
@@ -375,6 +508,23 @@ fn http_method_fn(method: &HttpMethod, has_body: bool) -> &'static str {
         HttpMethod::Put => "put",
         HttpMethod::Patch => "patch",
         HttpMethod::Delete => "delete",
+    }
+}
+
+/// Select the private helper method name for operations with no response body (e.g. 204).
+fn http_method_fn_empty(method: &HttpMethod, has_body: bool) -> &'static str {
+    match method {
+        HttpMethod::Get => "get_empty",
+        HttpMethod::Post => {
+            if has_body {
+                "post_no_response"
+            } else {
+                "post_empty_no_response"
+            }
+        }
+        HttpMethod::Put => "put_no_response",
+        HttpMethod::Patch => "patch_no_response",
+        HttpMethod::Delete => "delete_empty",
     }
 }
 
@@ -687,7 +837,7 @@ mod tests {
     }
 
     #[test]
-    fn response_type_fallback_to_value() {
+    fn no_response_type_returns_unit() {
         let op = Operation {
             id: "do_thing".into(),
             method: HttpMethod::Post,
@@ -701,7 +851,14 @@ mod tests {
         };
         let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
         let code = generate(&spec);
-        assert!(code.contains("-> Result<serde_json::Value>"));
+        assert!(
+            code.contains("-> Result<()>"),
+            "operations with no response_type should return Result<()>, got:\n{code}"
+        );
+        assert!(
+            code.contains("self.post_empty_no_response("),
+            "operations with no response_type should use the _no_response helper, got:\n{code}"
+        );
     }
 
     // -- Helper function tests --
@@ -814,5 +971,280 @@ mod tests {
         let spec = make_spec("my_api", AuthMethod::None, vec![]);
         let code = generate(&spec);
         assert!(code.contains("pub struct MyApiClient"));
+    }
+
+    // -- Bug fix: query parameter separator (runtime tracking) --
+
+    #[test]
+    fn query_params_use_runtime_separator_tracker() {
+        // When optional param is first, followed by a required param, the
+        // generated code must use a runtime `has_query` flag so the separator
+        // is correct regardless of whether the optional param is present.
+        let op = Operation {
+            id: "list_items".into(),
+            method: HttpMethod::Get,
+            path: "/items".into(),
+            summary: None,
+            description: None,
+            parameters: vec![
+                OpParameter {
+                    name: "status".into(),
+                    rust_name: "status".into(),
+                    location: ParamLocation::Query,
+                    required: false,
+                    rust_type: RustType::Option(Box::new(RustType::String)),
+                    description: None,
+                },
+                OpParameter {
+                    name: "limit".into(),
+                    rust_name: "limit".into(),
+                    location: ParamLocation::Query,
+                    required: true,
+                    rust_type: RustType::I64,
+                    description: None,
+                },
+            ],
+            request_body: None,
+            response_type: Some(RustType::Value),
+            errors: vec![],
+        };
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+
+        // Must declare runtime tracker
+        assert!(
+            code.contains("let mut has_query = false;"),
+            "generated code must declare runtime `has_query` tracker, got:\n{code}"
+        );
+
+        // Must NOT contain hard-coded '?' or '&' separator in format strings
+        assert!(
+            !code.contains("\"?status="),
+            "generated code must not use compile-time '?' separator, got:\n{code}"
+        );
+        assert!(
+            !code.contains("\"&limit="),
+            "generated code must not use compile-time '&' separator, got:\n{code}"
+        );
+
+        // Must use runtime conditional separator
+        assert!(
+            code.contains("if has_query"),
+            "generated code must check has_query at runtime, got:\n{code}"
+        );
+    }
+
+    #[test]
+    fn all_optional_query_params_use_runtime_separator() {
+        // All query params are optional — each one must independently
+        // check has_query at runtime.
+        let op = Operation {
+            id: "search".into(),
+            method: HttpMethod::Get,
+            path: "/search".into(),
+            summary: None,
+            description: None,
+            parameters: vec![
+                OpParameter {
+                    name: "q".into(),
+                    rust_name: "q".into(),
+                    location: ParamLocation::Query,
+                    required: false,
+                    rust_type: RustType::Option(Box::new(RustType::String)),
+                    description: None,
+                },
+                OpParameter {
+                    name: "page".into(),
+                    rust_name: "page".into(),
+                    location: ParamLocation::Query,
+                    required: false,
+                    rust_type: RustType::Option(Box::new(RustType::I64)),
+                    description: None,
+                },
+                OpParameter {
+                    name: "per_page".into(),
+                    rust_name: "per_page".into(),
+                    location: ParamLocation::Query,
+                    required: false,
+                    rust_type: RustType::Option(Box::new(RustType::I64)),
+                    description: None,
+                },
+            ],
+            request_body: None,
+            response_type: Some(RustType::Value),
+            errors: vec![],
+        };
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+
+        // Count occurrences of `has_query = true` — should be one per optional param
+        let set_count = code.matches("has_query = true").count();
+        assert_eq!(
+            set_count, 3,
+            "each optional query param should set has_query = true, found {set_count} times, got:\n{code}"
+        );
+    }
+
+    // -- Bug fix: 204 No Content (empty response) --
+
+    #[test]
+    fn generates_handle_empty_response() {
+        let spec = make_spec("TestApi", AuthMethod::None, vec![]);
+        let code = generate(&spec);
+        assert!(
+            code.contains("async fn handle_empty_response"),
+            "must generate handle_empty_response helper, got:\n{code}"
+        );
+        assert!(
+            code.contains("-> Result<()>"),
+            "handle_empty_response must return Result<()>"
+        );
+    }
+
+    #[test]
+    fn delete_no_response_uses_delete_empty() {
+        let op = Operation {
+            id: "delete_item".into(),
+            method: HttpMethod::Delete,
+            path: "/items/{id}".into(),
+            summary: None,
+            description: None,
+            parameters: vec![OpParameter {
+                name: "id".into(),
+                rust_name: "id".into(),
+                location: ParamLocation::Path,
+                required: true,
+                rust_type: RustType::String,
+                description: None,
+            }],
+            request_body: None,
+            response_type: None, // 204 No Content
+            errors: vec![],
+        };
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(
+            code.contains("-> Result<()>"),
+            "DELETE with no response should return Result<()>, got:\n{code}"
+        );
+        assert!(
+            code.contains("self.delete_empty("),
+            "DELETE with no response should use delete_empty helper, got:\n{code}"
+        );
+    }
+
+    #[test]
+    fn delete_with_response_uses_delete() {
+        let op = Operation {
+            id: "delete_item".into(),
+            method: HttpMethod::Delete,
+            path: "/items/{id}".into(),
+            summary: None,
+            description: None,
+            parameters: vec![OpParameter {
+                name: "id".into(),
+                rust_name: "id".into(),
+                location: ParamLocation::Path,
+                required: true,
+                rust_type: RustType::String,
+                description: None,
+            }],
+            request_body: None,
+            response_type: Some(RustType::Named("DeleteResult".into())),
+            errors: vec![],
+        };
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(
+            code.contains("-> Result<DeleteResult>"),
+            "DELETE with response type should return Result<DeleteResult>, got:\n{code}"
+        );
+        assert!(
+            code.contains("self.delete("),
+            "DELETE with response type should use regular delete helper, got:\n{code}"
+        );
+    }
+
+    #[test]
+    fn put_no_response_uses_put_no_response() {
+        let op = Operation {
+            id: "update_item".into(),
+            method: HttpMethod::Put,
+            path: "/items/{id}".into(),
+            summary: None,
+            description: None,
+            parameters: vec![OpParameter {
+                name: "id".into(),
+                rust_name: "id".into(),
+                location: ParamLocation::Path,
+                required: true,
+                rust_type: RustType::String,
+                description: None,
+            }],
+            request_body: Some(OpRequestBody {
+                required: true,
+                fields: vec![],
+                type_name: Some("UpdateItemRequest".into()),
+            }),
+            response_type: None, // 204 No Content
+            errors: vec![],
+        };
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(
+            code.contains("-> Result<()>"),
+            "PUT with no response should return Result<()>, got:\n{code}"
+        );
+        assert!(
+            code.contains("self.put_no_response("),
+            "PUT with no response should use put_no_response helper, got:\n{code}"
+        );
+    }
+
+    // -- http_method_fn_empty tests --
+
+    #[test]
+    fn http_method_fn_empty_get() {
+        assert_eq!(http_method_fn_empty(&HttpMethod::Get, false), "get_empty");
+    }
+
+    #[test]
+    fn http_method_fn_empty_post_with_body() {
+        assert_eq!(
+            http_method_fn_empty(&HttpMethod::Post, true),
+            "post_no_response"
+        );
+    }
+
+    #[test]
+    fn http_method_fn_empty_post_without_body() {
+        assert_eq!(
+            http_method_fn_empty(&HttpMethod::Post, false),
+            "post_empty_no_response"
+        );
+    }
+
+    #[test]
+    fn http_method_fn_empty_put() {
+        assert_eq!(
+            http_method_fn_empty(&HttpMethod::Put, true),
+            "put_no_response"
+        );
+    }
+
+    #[test]
+    fn http_method_fn_empty_patch() {
+        assert_eq!(
+            http_method_fn_empty(&HttpMethod::Patch, true),
+            "patch_no_response"
+        );
+    }
+
+    #[test]
+    fn http_method_fn_empty_delete() {
+        assert_eq!(
+            http_method_fn_empty(&HttpMethod::Delete, false),
+            "delete_empty"
+        );
     }
 }
