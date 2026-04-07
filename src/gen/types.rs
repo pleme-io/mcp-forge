@@ -104,7 +104,7 @@ fn generate_field(out: &mut String, field: &FieldDef) {
     }
 
     if !field.required {
-        if matches!(&field.rust_type, RustType::Option(_)) {
+        if field.rust_type.is_option() {
             out.push_str(
                 "    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n",
             );
