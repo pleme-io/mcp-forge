@@ -1398,4 +1398,746 @@ paths:
             .unwrap();
         assert_eq!(name_field.description.as_deref(), Some("The pet's name"));
     }
+
+    // -- Integer format uint64 --
+
+    #[test]
+    fn schema_type_integer_uint64() {
+        let yaml = r#"
+info:
+  title: Uint64Test
+  version: "1.0.0"
+paths:
+  /test:
+    get:
+      operationId: test
+      parameters:
+        - name: big_count
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: uint64
+      responses:
+        "200":
+          description: ok
+"#;
+        let api = parse_ir(yaml);
+        let param = &api.operations[0].parameters[0];
+        assert_eq!(param.rust_type, RustType::U64);
+    }
+
+    // -- Header parameter location --
+
+    #[test]
+    fn header_parameter_location() {
+        let yaml = r#"
+info:
+  title: HeaderTest
+  version: "1.0.0"
+paths:
+  /test:
+    get:
+      operationId: test
+      parameters:
+        - name: X-Request-Id
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ok
+"#;
+        let api = parse_ir(yaml);
+        let param = &api.operations[0].parameters[0];
+        assert_eq!(param.location, ParamLocation::Header);
+        assert!(!param.required);
+        assert_eq!(param.rust_type, RustType::Option(Box::new(RustType::String)));
+    }
+
+    // -- oneOf / anyOf fallback to Value --
+
+    #[test]
+    fn one_of_resolves_to_value() {
+        let yaml = r##"
+info:
+  title: OneOfTest
+  version: "1.0.0"
+paths: {}
+components:
+  schemas:
+    Mixed:
+      type: object
+      properties:
+        data:
+          oneOf:
+            - type: string
+            - type: integer
+      required:
+        - data
+"##;
+        let api = parse_ir(yaml);
+        let mixed = api.types.iter().find(|t| t.rust_name == "Mixed").unwrap();
+        let data = mixed.fields.iter().find(|f| f.rust_name == "data").unwrap();
+        assert_eq!(data.rust_type, RustType::Value);
+    }
+
+    #[test]
+    fn any_of_resolves_to_value() {
+        let yaml = r##"
+info:
+  title: AnyOfTest
+  version: "1.0.0"
+paths: {}
+components:
+  schemas:
+    Flexible:
+      type: object
+      properties:
+        payload:
+          anyOf:
+            - type: string
+            - type: number
+      required:
+        - payload
+"##;
+        let api = parse_ir(yaml);
+        let flex = api.types.iter().find(|t| t.rust_name == "Flexible").unwrap();
+        let payload = flex.fields.iter().find(|f| f.rust_name == "payload").unwrap();
+        assert_eq!(payload.rust_type, RustType::Value);
+    }
+
+    // -- Array with no items schema --
+
+    #[test]
+    fn array_with_no_items_uses_value() {
+        let yaml = r##"
+info:
+  title: ArrayNoItems
+  version: "1.0.0"
+paths: {}
+components:
+  schemas:
+    Container:
+      type: object
+      required:
+        - things
+      properties:
+        things:
+          type: array
+"##;
+        let api = parse_ir(yaml);
+        let container = api.types.iter().find(|t| t.rust_name == "Container").unwrap();
+        let things = container.fields.iter().find(|f| f.rust_name == "things").unwrap();
+        assert_eq!(things.rust_type, RustType::Vec(Box::new(RustType::Value)));
+    }
+
+    // -- Inline enum at field level --
+
+    #[test]
+    fn inline_enum_creates_named_type() {
+        let yaml = r##"
+info:
+  title: InlineEnum
+  version: "1.0.0"
+paths: {}
+components:
+  schemas:
+    Task:
+      type: object
+      required:
+        - priority
+      properties:
+        priority:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+"##;
+        let api = parse_ir(yaml);
+        let task = api.types.iter().find(|t| t.rust_name == "Task").unwrap();
+        let prio_field = task.fields.iter().find(|f| f.rust_name == "priority").unwrap();
+        assert!(matches!(prio_field.rust_type, RustType::Named(_)));
+
+        let prio_type = api.types.iter().find(|t| t.rust_name == "Priority").unwrap();
+        assert!(prio_type.is_enum);
+        assert_eq!(prio_type.enum_variants.len(), 3);
+    }
+
+    // -- Object with additional_properties falls back to Value --
+
+    #[test]
+    fn object_with_additional_properties_is_value() {
+        let yaml = r##"
+info:
+  title: AdditionalProps
+  version: "1.0.0"
+paths: {}
+components:
+  schemas:
+    Metadata:
+      type: object
+      additionalProperties:
+        type: string
+"##;
+        let api = parse_ir(yaml);
+        let meta = api.types.iter().find(|t| t.rust_name == "Metadata").unwrap();
+        assert!(meta.fields.is_empty());
+    }
+
+    // -- No explicit type but has properties (implicit object) --
+
+    #[test]
+    fn implicit_object_with_properties() {
+        let yaml = r##"
+info:
+  title: ImplicitObj
+  version: "1.0.0"
+paths: {}
+components:
+  schemas:
+    Implicit:
+      properties:
+        name:
+          type: string
+      required:
+        - name
+"##;
+        let api = parse_ir(yaml);
+        let implicit = api.types.iter().find(|t| t.rust_name == "Implicit").unwrap();
+        assert!(!implicit.fields.is_empty());
+        let name_field = implicit.fields.iter().find(|f| f.rust_name == "name").unwrap();
+        assert_eq!(name_field.rust_type, RustType::String);
+    }
+
+    // -- apiKey in non-header location is ignored --
+
+    #[test]
+    fn api_key_non_header_auth_is_none() {
+        let yaml = r#"
+info:
+  title: ApiKeyQuery
+  version: "1.0.0"
+paths: {}
+components:
+  securitySchemes:
+    queryKey:
+      type: apiKey
+      in: query
+      name: api_key
+"#;
+        let api = parse_ir(yaml);
+        assert_eq!(api.auth, AuthMethod::None);
+    }
+
+    // -- apiKey header with missing name --
+
+    #[test]
+    fn api_key_header_no_name_is_none() {
+        let yaml = r#"
+info:
+  title: ApiKeyNoName
+  version: "1.0.0"
+paths: {}
+components:
+  securitySchemes:
+    headerKey:
+      type: apiKey
+      in: header
+"#;
+        let api = parse_ir(yaml);
+        assert_eq!(api.auth, AuthMethod::None);
+    }
+
+    // -- Unknown security scheme type --
+
+    #[test]
+    fn unknown_security_scheme_type_is_none() {
+        let yaml = r#"
+info:
+  title: UnknownScheme
+  version: "1.0.0"
+paths: {}
+components:
+  securitySchemes:
+    oauth:
+      type: oauth2
+"#;
+        let api = parse_ir(yaml);
+        assert_eq!(api.auth, AuthMethod::None);
+    }
+
+    // -- HTTP scheme with unrecognized scheme name --
+
+    #[test]
+    fn http_scheme_unknown_scheme_is_none() {
+        let yaml = r#"
+info:
+  title: UnknownHttpScheme
+  version: "1.0.0"
+paths: {}
+components:
+  securitySchemes:
+    digest:
+      type: http
+      scheme: digest
+"#;
+        let api = parse_ir(yaml);
+        assert_eq!(api.auth, AuthMethod::None);
+    }
+
+    // -- Operation parameter override (op-level overrides path-level) --
+
+    #[test]
+    fn operation_param_overrides_path_param() {
+        let yaml = r#"
+info:
+  title: ParamOverride
+  version: "1.0.0"
+paths:
+  /items:
+    parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+    get:
+      operationId: listItems
+      parameters:
+        - name: page
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: ok
+"#;
+        let api = parse_ir(yaml);
+        let op = api.operations.iter().find(|o| o.id == "list_items").unwrap();
+        let page = op.parameters.iter().find(|p| p.name == "page").unwrap();
+        assert!(page.required, "op-level param should override path-level required=false");
+    }
+
+    // -- Multiple 2xx responses: picks first in priority order --
+
+    #[test]
+    fn response_type_priority_200_over_201() {
+        let yaml = r##"
+info:
+  title: MultiResponse
+  version: "1.0.0"
+paths:
+  /items:
+    post:
+      operationId: createItem
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created_id:
+                    type: string
+                required:
+                  - created_id
+        "200":
+          description: Already existed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+components:
+  schemas:
+    Item:
+      type: object
+      properties:
+        id:
+          type: integer
+"##;
+        let api = parse_ir(yaml);
+        let op = api.operations.iter().find(|o| o.id == "create_item").unwrap();
+        assert_eq!(op.response_type, Some(RustType::Named("Item".into())));
+    }
+
+    // -- Request body with */* media type --
+
+    #[test]
+    fn request_body_wildcard_media_type() {
+        let yaml = r#"
+info:
+  title: WildcardMedia
+  version: "1.0.0"
+paths:
+  /items:
+    post:
+      operationId: createItem
+      requestBody:
+        required: true
+        content:
+          "*/*":
+            schema:
+              type: object
+              properties:
+                data:
+                  type: string
+              required:
+                - data
+      responses:
+        "201":
+          description: created
+"#;
+        let api = parse_ir(yaml);
+        let op = api.operations.iter().find(|o| o.id == "create_item").unwrap();
+        let body = op.request_body.as_ref().unwrap();
+        assert!(!body.fields.is_empty());
+    }
+
+    // -- Request body with no recognized media type --
+
+    #[test]
+    fn request_body_unrecognized_media_type_returns_none() {
+        let yaml = r#"
+info:
+  title: NoJsonBody
+  version: "1.0.0"
+paths:
+  /upload:
+    post:
+      operationId: uploadFile
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+      responses:
+        "200":
+          description: ok
+"#;
+        let api = parse_ir(yaml);
+        let op = api.operations.iter().find(|o| o.id == "upload_file").unwrap();
+        assert!(op.request_body.is_none());
+    }
+
+    // -- Path parameter is always required --
+
+    #[test]
+    fn path_params_are_always_required() {
+        let yaml = r#"
+info:
+  title: PathRequired
+  version: "1.0.0"
+paths:
+  /items/{id}:
+    get:
+      operationId: getItem
+      parameters:
+        - name: id
+          in: path
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ok
+"#;
+        let api = parse_ir(yaml);
+        let op = api.operations.iter().find(|o| o.id == "get_item").unwrap();
+        let id_param = op.parameters.iter().find(|p| p.name == "id").unwrap();
+        assert!(id_param.required, "path params must always be required even if spec says false");
+        assert_eq!(id_param.rust_type, RustType::String);
+    }
+
+    // -- PATCH method --
+
+    #[test]
+    fn patch_method_is_detected() {
+        let yaml = r#"
+info:
+  title: PatchTest
+  version: "1.0.0"
+paths:
+  /items/{id}:
+    patch:
+      operationId: patchItem
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ok
+"#;
+        let api = parse_ir(yaml);
+        let op = api.operations.iter().find(|o| o.id == "patch_item").unwrap();
+        assert_eq!(op.method, HttpMethod::Patch);
+    }
+
+    // -- No content in 204 response --
+
+    #[test]
+    fn no_response_type_from_empty_204() {
+        let yaml = r#"
+info:
+  title: Empty204
+  version: "1.0.0"
+paths:
+  /items/{id}:
+    delete:
+      operationId: deleteItem
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No content
+"#;
+        let api = parse_ir(yaml);
+        let op = api.operations.iter().find(|o| o.id == "delete_item").unwrap();
+        assert!(op.response_type.is_none());
+    }
+
+    // -- allOf with direct properties on parent schema --
+
+    #[test]
+    fn all_of_with_parent_properties() {
+        let yaml = r##"
+info:
+  title: AllOfParent
+  version: "1.0.0"
+paths: {}
+components:
+  schemas:
+    Base:
+      type: object
+      properties:
+        id:
+          type: integer
+      required:
+        - id
+    Child:
+      allOf:
+        - $ref: "#/components/schemas/Base"
+      properties:
+        name:
+          type: string
+      required:
+        - name
+"##;
+        let api = parse_ir(yaml);
+        let child = api.types.iter().find(|t| t.rust_name == "Child").unwrap();
+        let field_names: Vec<&str> = child.fields.iter().map(|f| f.rust_name.as_str()).collect();
+        assert!(field_names.contains(&"id"), "should inherit base fields");
+        assert!(field_names.contains(&"name"), "should have own fields");
+    }
+
+    // -- Multiple operations on the same path --
+
+    #[test]
+    fn multiple_methods_on_same_path() {
+        let yaml = r#"
+info:
+  title: MultiMethod
+  version: "1.0.0"
+paths:
+  /items:
+    get:
+      operationId: listItems
+      responses:
+        "200":
+          description: ok
+    post:
+      operationId: createItem
+      responses:
+        "201":
+          description: created
+    put:
+      operationId: replaceItems
+      responses:
+        "200":
+          description: ok
+"#;
+        let api = parse_ir(yaml);
+        assert_eq!(api.operations.len(), 3);
+        let methods: Vec<HttpMethod> = api.operations.iter().map(|o| o.method).collect();
+        assert!(methods.contains(&HttpMethod::Get));
+        assert!(methods.contains(&HttpMethod::Post));
+        assert!(methods.contains(&HttpMethod::Put));
+    }
+
+    // -- Empty components section --
+
+    #[test]
+    fn empty_paths_produces_no_operations() {
+        let yaml = r#"
+info:
+  title: EmptyPaths
+  version: "1.0.0"
+paths: {}
+"#;
+        let api = parse_ir(yaml);
+        assert!(api.operations.is_empty());
+        assert!(api.types.is_empty());
+    }
+
+    // -- Default values on fields --
+
+    #[test]
+    fn field_default_value_is_preserved() {
+        let yaml = r##"
+info:
+  title: DefaultVal
+  version: "1.0.0"
+paths: {}
+components:
+  schemas:
+    Config:
+      type: object
+      properties:
+        retries:
+          type: integer
+          default: 3
+        mode:
+          type: string
+          default: "auto"
+"##;
+        let api = parse_ir(yaml);
+        let config = api.types.iter().find(|t| t.rust_name == "Config").unwrap();
+        let retries = config.fields.iter().find(|f| f.rust_name == "retries").unwrap();
+        assert_eq!(retries.default_value, Some(serde_json::json!(3)));
+        let mode = config.fields.iter().find(|f| f.rust_name == "mode").unwrap();
+        assert_eq!(mode.default_value, Some(serde_json::json!("auto")));
+    }
+
+    // -- Operation with description (not summary) --
+
+    #[test]
+    fn operation_description_is_preserved() {
+        let yaml = r#"
+info:
+  title: DescTest
+  version: "1.0.0"
+paths:
+  /test:
+    get:
+      operationId: test
+      description: A longer description of the test operation
+      responses:
+        "200":
+          description: ok
+"#;
+        let api = parse_ir(yaml);
+        let op = &api.operations[0];
+        assert_eq!(
+            op.description.as_deref(),
+            Some("A longer description of the test operation")
+        );
+    }
+
+    // -- Parameter without schema defaults to String --
+
+    #[test]
+    fn parameter_without_schema_defaults_to_string() {
+        let yaml = r#"
+info:
+  title: NoSchemaParam
+  version: "1.0.0"
+paths:
+  /test:
+    get:
+      operationId: test
+      parameters:
+        - name: token
+          in: query
+          required: true
+      responses:
+        "200":
+          description: ok
+"#;
+        let api = parse_ir(yaml);
+        let param = &api.operations[0].parameters[0];
+        assert_eq!(param.rust_type, RustType::String);
+    }
+
+    // -- Nested allOf with context_name generates Named type --
+
+    #[test]
+    fn all_of_at_field_level_creates_named_type() {
+        let yaml = r##"
+info:
+  title: FieldAllOf
+  version: "1.0.0"
+paths: {}
+components:
+  schemas:
+    Base:
+      type: object
+      properties:
+        id:
+          type: integer
+    Wrapper:
+      type: object
+      required:
+        - nested
+      properties:
+        nested:
+          allOf:
+            - $ref: "#/components/schemas/Base"
+            - type: object
+              properties:
+                extra:
+                  type: string
+"##;
+        let api = parse_ir(yaml);
+        let wrapper = api.types.iter().find(|t| t.rust_name == "Wrapper").unwrap();
+        let nested = wrapper.fields.iter().find(|f| f.rust_name == "nested").unwrap();
+        assert!(matches!(nested.rust_type, RustType::Named(_)));
+    }
+
+    // -- Name (title) is preserved exactly (not snake-cased) --
+
+    #[test]
+    fn api_name_is_raw_title() {
+        let yaml = r#"
+info:
+  title: My Awesome API
+  version: "1.0.0"
+paths: {}
+"#;
+        let api = parse_ir(yaml);
+        assert_eq!(api.name, "My Awesome API");
+    }
+
+    // -- Bearer auth case insensitive --
+
+    #[test]
+    fn bearer_auth_case_insensitive() {
+        let yaml = r#"
+info:
+  title: CaseAuth
+  version: "1.0.0"
+paths: {}
+components:
+  securitySchemes:
+    auth:
+      type: http
+      scheme: Bearer
+"#;
+        let api = parse_ir(yaml);
+        assert_eq!(api.auth, AuthMethod::Bearer);
+    }
 }
