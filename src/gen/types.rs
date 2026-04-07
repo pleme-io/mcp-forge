@@ -134,17 +134,7 @@ fn generate_field(out: &mut String, field: &FieldDef) {
 }
 
 fn rust_type_to_string(rt: &RustType) -> String {
-    match rt {
-        RustType::String => "String".into(),
-        RustType::I64 => "i64".into(),
-        RustType::U64 => "u64".into(),
-        RustType::F64 => "f64".into(),
-        RustType::Bool => "bool".into(),
-        RustType::Vec(inner) => format!("Vec<{}>", rust_type_to_string(inner)),
-        RustType::Option(inner) => format!("Option<{}>", rust_type_to_string(inner)),
-        RustType::Named(name) => name.clone(),
-        RustType::Value => "serde_json::Value".into(),
-    }
+    rt.to_string()
 }
 
 /// Check if `name` -> `rust_name` is a standard `camelCase` to `snake_case` conversion.
