@@ -842,4 +842,159 @@ mod tests {
         assert!(content.contains("/target"));
         assert!(content.contains("/result"));
     }
+
+    // -- Scaffold with no base_url falls back to example.com --
+
+    #[test]
+    fn config_rs_no_base_url_uses_fallback() {
+        let mut spec = make_spec();
+        spec.base_url = None;
+        let content = generate_config_rs(&spec);
+        assert!(content.contains("https://api.example.com"));
+    }
+
+    // -- Module nix with no base_url --
+
+    #[test]
+    fn module_nix_no_base_url_uses_fallback() {
+        let mut spec = make_spec();
+        spec.base_url = None;
+        let content = generate_module_nix(&spec);
+        assert!(content.contains("https://api.example.com"));
+    }
+
+    // -- Flake description with no spec description --
+
+    #[test]
+    fn flake_nix_no_description_uses_fallback() {
+        let mut spec = make_spec();
+        spec.description = None;
+        let content = generate_flake_nix(&spec);
+        assert!(content.contains("pet_store -- Rust CLI + MCP server"));
+    }
+
+    // -- Main.rs with no description --
+
+    #[test]
+    fn main_rs_no_description_uses_fallback() {
+        let mut spec = make_spec();
+        spec.description = None;
+        let content = generate_main_rs(&spec);
+        assert!(content.contains("pet_store CLI + MCP server"));
+    }
+
+    // -- Error.rs env var name follows snake_case UPPER pattern --
+
+    #[test]
+    fn error_rs_env_var_for_custom_name() {
+        let mut spec = make_spec();
+        spec.name = "My Cool API".into();
+        let content = generate_error_rs(&spec);
+        assert!(content.contains("MY_COOL_API_API_KEY"));
+    }
+
+    // -- Config loads from XDG + HOME --
+
+    #[test]
+    fn config_rs_has_home_fallback() {
+        let spec = make_spec();
+        let content = generate_config_rs(&spec);
+        assert!(content.contains(".config/pet_store/pet_store.yaml"));
+    }
+
+    // -- Auth.rs expand_tilde handles non-tilde paths --
+
+    #[test]
+    fn auth_rs_has_expand_tilde() {
+        let spec = make_spec();
+        let content = generate_auth_rs(&spec);
+        assert!(content.contains("fn expand_tilde("));
+    }
+
+    // -- Scaffold files are all non-empty --
+
+    #[test]
+    fn scaffold_files_all_non_empty() {
+        let spec = make_spec();
+        let files = generate_scaffold(&spec);
+        for (path, content) in &files {
+            assert!(
+                !content.is_empty(),
+                "scaffold file should not be empty: {path}"
+            );
+        }
+    }
+
+    // -- Different spec name produces different naming --
+
+    #[test]
+    fn scaffold_uses_spec_name() {
+        let mut spec = make_spec();
+        spec.name = "Widget Factory".into();
+        let files = generate_scaffold(&spec);
+        let cargo = files.iter().find(|(p, _)| p == "Cargo.toml").unwrap();
+        assert!(cargo.1.contains("widget_factory"));
+
+        let main = files.iter().find(|(p, _)| p == "src/main.rs").unwrap();
+        assert!(main.1.contains("WidgetFactoryConfig"));
+
+        let error = files.iter().find(|(p, _)| p == "src/error.rs").unwrap();
+        assert!(error.1.contains("WidgetFactoryError"));
+    }
+
+    // -- flake.nix has homeManagerModules --
+
+    #[test]
+    fn flake_nix_has_hm_modules() {
+        let spec = make_spec();
+        let content = generate_flake_nix(&spec);
+        assert!(content.contains("homeManagerModules.default"));
+    }
+
+    // -- module/default.nix has mkIf --
+
+    #[test]
+    fn module_nix_has_mkif() {
+        let spec = make_spec();
+        let content = generate_module_nix(&spec);
+        assert!(content.contains("mkIf cfg.enable"));
+        assert!(content.contains("mkIf mcpCfg.enable"));
+    }
+
+    // -- config.rs serde(default) attribute --
+
+    #[test]
+    fn config_rs_has_serde_default() {
+        let spec = make_spec();
+        let content = generate_config_rs(&spec);
+        assert!(content.contains("#[serde(default)]"));
+    }
+
+    // -- auth.rs returns error for empty key file --
+
+    #[test]
+    fn auth_rs_handles_empty_key() {
+        let spec = make_spec();
+        let content = generate_auth_rs(&spec);
+        assert!(content.contains("key.is_empty()"));
+    }
+
+    // -- main.rs has MCP server mode --
+
+    #[test]
+    fn main_rs_has_mcp_server_mode() {
+        let spec = make_spec();
+        let content = generate_main_rs(&spec);
+        assert!(content.contains("mcp::run().await"));
+    }
+
+    // -- Cargo.toml has bin section --
+
+    #[test]
+    fn cargo_toml_has_bin_section() {
+        let spec = make_spec();
+        let content = generate_cargo_toml(&spec);
+        assert!(content.contains("[[bin]]"));
+        assert!(content.contains("path = \"src/main.rs\""));
+    }
 }

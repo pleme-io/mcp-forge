@@ -647,7 +647,258 @@ mod tests {
         let op = make_get_op_with_response("get_stats", RustType::Named("Stats".into()));
         let spec = make_spec(vec![item], vec![op]);
         let code = generate(&spec);
-        // Vec fields in single format show item count
         assert!(code.contains("data.tags.len()"));
+    }
+
+    // -- stop_ prefix operations are skipped --
+
+    #[test]
+    fn skips_stop_operations() {
+        let op = Operation {
+            id: "stop_service".into(),
+            method: HttpMethod::Post,
+            path: "/services/{id}/stop".into(),
+            summary: None,
+            description: None,
+            parameters: vec![],
+            request_body: None,
+            response_type: Some(RustType::Value),
+            errors: vec![],
+        };
+        let spec = make_spec(vec![], vec![op]);
+        let code = generate(&spec);
+        assert!(!code.contains("format_stop_service"));
+    }
+
+    // -- delete_ prefix operations are also skipped --
+
+    #[test]
+    fn skips_delete_prefixed_operations() {
+        let op = Operation {
+            id: "delete_cache".into(),
+            method: HttpMethod::Post,
+            path: "/cache/clear".into(),
+            summary: None,
+            description: None,
+            parameters: vec![],
+            request_body: None,
+            response_type: Some(RustType::Value),
+            errors: vec![],
+        };
+        let spec = make_spec(vec![], vec![op]);
+        let code = generate(&spec);
+        assert!(!code.contains("format_delete_cache"));
+    }
+
+    // -- Simple Vec<String> list format --
+
+    #[test]
+    fn generates_simple_vec_list_format() {
+        let list_resp = make_struct(
+            "NameList",
+            vec![make_field(
+                "names",
+                RustType::Vec(Box::new(RustType::String)),
+                true,
+            )],
+        );
+        let op = make_get_op_with_response("list_names", RustType::Named("NameList".into()));
+        let spec = make_spec(vec![list_resp], vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("for item in &data.names"));
+        assert!(code.contains("writeln!(out, \"  {}\", item)"));
+    }
+
+    // -- Compact format with no display fields uses Debug --
+
+    #[test]
+    fn compact_format_no_display_fields_uses_debug() {
+        let inner = make_struct(
+            "Blob",
+            vec![
+                make_field("data", RustType::Value, true),
+                make_field(
+                    "nested",
+                    RustType::Vec(Box::new(RustType::String)),
+                    true,
+                ),
+            ],
+        );
+        let list_resp = make_struct(
+            "BlobList",
+            vec![make_field(
+                "blobs",
+                RustType::Vec(Box::new(RustType::Named("Blob".into()))),
+                true,
+            )],
+        );
+        let op = make_get_op_with_response("list_blobs", RustType::Named("BlobList".into()));
+        let spec = make_spec(vec![inner, list_resp], vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("{:?}"), "should use Debug for items with no display fields");
+    }
+
+    // -- Option fields in compact item format use as_deref --
+
+    #[test]
+    fn compact_format_option_field_uses_as_deref() {
+        let inner = make_struct(
+            "Widget",
+            vec![
+                make_field("id", RustType::I64, true),
+                make_field("label", RustType::Option(Box::new(RustType::String)), false),
+            ],
+        );
+        let list_resp = make_struct(
+            "WidgetList",
+            vec![make_field(
+                "widgets",
+                RustType::Vec(Box::new(RustType::Named("Widget".into()))),
+                true,
+            )],
+        );
+        let op = make_get_op_with_response("list_widgets", RustType::Named("WidgetList".into()));
+        let spec = make_spec(vec![inner, list_resp], vec![op]);
+        let code = generate(&spec);
+        assert!(
+            code.contains("as_deref().unwrap_or(\"-\")"),
+            "option fields in compact display should use as_deref"
+        );
+    }
+
+    // -- field_label with multiple underscores --
+
+    #[test]
+    fn field_label_multiple_underscores() {
+        assert_eq!(field_label("api_key_file_path"), "Api Key File Path");
+    }
+
+    // -- field_label single word --
+
+    #[test]
+    fn field_label_single_word() {
+        assert_eq!(field_label("name"), "Name");
+    }
+
+    // -- is_display_field for Named type --
+
+    #[test]
+    fn is_display_field_named() {
+        assert!(is_display_field(&make_field(
+            "status",
+            RustType::Named("Status".into()),
+            true
+        )));
+    }
+
+    // -- is_display_field for F64 and U64 --
+
+    #[test]
+    fn is_display_field_numeric_types() {
+        assert!(is_display_field(&make_field("price", RustType::F64, true)));
+        assert!(is_display_field(&make_field("count", RustType::U64, true)));
+    }
+
+    // -- Compact format limits to 4 fields --
+
+    #[test]
+    fn compact_format_limits_to_4_key_fields() {
+        let inner = make_struct(
+            "BigItem",
+            vec![
+                make_field("a", RustType::String, true),
+                make_field("b", RustType::String, true),
+                make_field("c", RustType::String, true),
+                make_field("d", RustType::String, true),
+                make_field("e", RustType::String, true),
+                make_field("f", RustType::String, true),
+            ],
+        );
+        let list_resp = make_struct(
+            "BigList",
+            vec![make_field(
+                "items",
+                RustType::Vec(Box::new(RustType::Named("BigItem".into()))),
+                true,
+            )],
+        );
+        let op = make_get_op_with_response("list_big", RustType::Named("BigList".into()));
+        let spec = make_spec(vec![inner, list_resp], vec![op]);
+        let code = generate(&spec);
+        let pipe_count = code.matches(" | ").count();
+        assert!(
+            pipe_count <= 3,
+            "compact format should show at most 4 fields (3 pipes), got {pipe_count}"
+        );
+    }
+
+    // -- cursor field detection with "next" in name --
+
+    #[test]
+    fn cursor_field_detected_by_next_in_name() {
+        let item = make_struct("Item", vec![make_field("id", RustType::I64, true)]);
+        let list_resp = make_struct(
+            "ItemList",
+            vec![
+                make_field(
+                    "items",
+                    RustType::Vec(Box::new(RustType::Named("Item".into()))),
+                    true,
+                ),
+                make_field(
+                    "next_page",
+                    RustType::Option(Box::new(RustType::String)),
+                    false,
+                ),
+            ],
+        );
+        let op = make_get_op_with_response("list_items", RustType::Named("ItemList".into()));
+        let spec = make_spec(vec![item, list_resp], vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("next_page"), "should detect 'next' field");
+    }
+
+    // -- Vec<Named> with unknown inner type uses Debug --
+
+    #[test]
+    fn list_format_unknown_inner_type_uses_debug() {
+        let list_resp = make_struct(
+            "MysteryList",
+            vec![make_field(
+                "items",
+                RustType::Vec(Box::new(RustType::Named("Mystery".into()))),
+                true,
+            )],
+        );
+        let op =
+            make_get_op_with_response("list_mystery", RustType::Named("MysteryList".into()));
+        let spec = make_spec(vec![list_resp], vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("{:?}"), "unknown inner type should use Debug");
+    }
+
+    // -- Non-list cursor field is ignored (cursor requires Option) --
+
+    #[test]
+    fn non_option_cursor_field_not_printed() {
+        let item = make_struct("Item", vec![make_field("id", RustType::I64, true)]);
+        let list_resp = make_struct(
+            "ItemList",
+            vec![
+                make_field(
+                    "items",
+                    RustType::Vec(Box::new(RustType::Named("Item".into()))),
+                    true,
+                ),
+                make_field("cursor", RustType::String, true),
+            ],
+        );
+        let op = make_get_op_with_response("list_items", RustType::Named("ItemList".into()));
+        let spec = make_spec(vec![item, list_resp], vec![op]);
+        let code = generate(&spec);
+        assert!(
+            !code.contains("next page"),
+            "non-Option cursor field should not generate pagination text"
+        );
     }
 }

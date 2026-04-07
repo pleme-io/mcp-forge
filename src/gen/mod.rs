@@ -476,4 +476,159 @@ mod tests {
 
         assert!(dir.path().join("Cargo.toml").exists());
     }
+
+    // -- Generated files are valid UTF-8 and non-trivially sized --
+
+    #[test]
+    fn generated_files_have_reasonable_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = make_petstore_spec();
+        generate(&spec, dir.path()).unwrap();
+
+        let key_files = [
+            "src/api/types.rs",
+            "src/client.rs",
+            "src/mcp.rs",
+            "src/format.rs",
+        ];
+
+        for file in &key_files {
+            let content = std::fs::read_to_string(dir.path().join(file)).unwrap();
+            assert!(
+                content.len() > 100,
+                "{file} should have substantial content, got {} bytes",
+                content.len()
+            );
+        }
+    }
+
+    // -- Generated mcp.rs and client.rs reference the same operation names --
+
+    #[test]
+    fn generated_mcp_and_client_share_operation_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = make_petstore_spec();
+        generate(&spec, dir.path()).unwrap();
+
+        let mcp = std::fs::read_to_string(dir.path().join("src/mcp.rs")).unwrap();
+        let client = std::fs::read_to_string(dir.path().join("src/client.rs")).unwrap();
+
+        for op in &spec.operations {
+            assert!(
+                client.contains(&format!("fn {}(", op.id)),
+                "client.rs missing operation: {}",
+                op.id
+            );
+            assert!(
+                mcp.contains(&format!("fn {}(", op.id)),
+                "mcp.rs missing operation: {}",
+                op.id
+            );
+        }
+    }
+
+    // -- No operations still generates compilable scaffold --
+
+    #[test]
+    fn empty_spec_generates_all_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = ApiSpec {
+            name: "EmptyApi".into(),
+            description: None,
+            version: "0.1.0".into(),
+            base_url: None,
+            auth: AuthMethod::None,
+            operations: vec![],
+            types: vec![],
+        };
+        generate(&spec, dir.path()).unwrap();
+
+        let expected = [
+            "Cargo.toml",
+            "src/main.rs",
+            "src/error.rs",
+            "src/config.rs",
+            "src/auth.rs",
+            "src/api/mod.rs",
+            "src/api/types.rs",
+            "src/client.rs",
+            "src/mcp.rs",
+            "src/format.rs",
+            "flake.nix",
+            "module/default.nix",
+            ".gitignore",
+        ];
+
+        for file in &expected {
+            assert!(
+                dir.path().join(file).exists(),
+                "empty spec should still generate: {file}"
+            );
+        }
+    }
+
+    // -- Types rs has correct enum from spec --
+
+    #[test]
+    fn generated_types_rs_has_enum_variants() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = make_petstore_spec();
+        generate(&spec, dir.path()).unwrap();
+
+        let content = std::fs::read_to_string(dir.path().join("src/api/types.rs")).unwrap();
+        assert!(content.contains("Available"));
+        assert!(content.contains("Pending"));
+        assert!(content.contains("Sold"));
+    }
+
+    // -- format.rs skips delete operations --
+
+    #[test]
+    fn generated_format_rs_skips_delete() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = make_petstore_spec();
+        generate(&spec, dir.path()).unwrap();
+
+        let content = std::fs::read_to_string(dir.path().join("src/format.rs")).unwrap();
+        assert!(
+            !content.contains("format_delete"),
+            "format.rs should not contain delete formatters"
+        );
+    }
+
+    // -- Different auth methods produce different client code --
+
+    #[test]
+    fn generate_with_basic_auth() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut spec = make_petstore_spec();
+        spec.auth = AuthMethod::Basic;
+        generate(&spec, dir.path()).unwrap();
+
+        let client = std::fs::read_to_string(dir.path().join("src/client.rs")).unwrap();
+        assert!(client.contains("basic_auth"));
+    }
+
+    #[test]
+    fn generate_with_api_key_auth() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut spec = make_petstore_spec();
+        spec.auth = AuthMethod::ApiKeyHeader("X-Custom-Key".into());
+        generate(&spec, dir.path()).unwrap();
+
+        let client = std::fs::read_to_string(dir.path().join("src/client.rs")).unwrap();
+        assert!(client.contains("X-Custom-Key"));
+    }
+
+    #[test]
+    fn generate_with_no_auth() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut spec = make_petstore_spec();
+        spec.auth = AuthMethod::None;
+        generate(&spec, dir.path()).unwrap();
+
+        let client = std::fs::read_to_string(dir.path().join("src/client.rs")).unwrap();
+        assert!(!client.contains("bearer_auth"));
+        assert!(!client.contains("basic_auth"));
+    }
 }

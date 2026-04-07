@@ -702,4 +702,300 @@ mod tests {
         let code = generate(&spec);
         assert!(code.contains("TestApi MCP server"));
     }
+
+    // -- Description fallback to operation description when no summary --
+
+    #[test]
+    fn tool_description_from_description_field() {
+        let op = Operation {
+            id: "do_thing".into(),
+            method: HttpMethod::Post,
+            path: "/thing".into(),
+            summary: None,
+            description: Some("A long description for this operation".into()),
+            parameters: vec![],
+            request_body: None,
+            response_type: None,
+            errors: vec![],
+        };
+        let spec = make_spec(vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("A long description for this operation"));
+    }
+
+    // -- Mixed path + query + body params --
+
+    #[test]
+    fn tool_with_mixed_params() {
+        let op = Operation {
+            id: "update_user_setting".into(),
+            method: HttpMethod::Put,
+            path: "/users/{userId}/settings".into(),
+            summary: Some("Update a user setting".into()),
+            description: None,
+            parameters: vec![
+                OpParameter {
+                    name: "userId".into(),
+                    rust_name: "user_id".into(),
+                    location: ParamLocation::Path,
+                    required: true,
+                    rust_type: RustType::String,
+                    description: Some("User identifier".into()),
+                },
+                OpParameter {
+                    name: "force".into(),
+                    rust_name: "force".into(),
+                    location: ParamLocation::Query,
+                    required: false,
+                    rust_type: RustType::Option(Box::new(RustType::Bool)),
+                    description: None,
+                },
+            ],
+            request_body: Some(OpRequestBody {
+                required: true,
+                fields: vec![FieldDef {
+                    name: "value".into(),
+                    rust_name: "value".into(),
+                    rust_type: RustType::String,
+                    required: true,
+                    description: Some("Setting value".into()),
+                    default_value: None,
+                }],
+                type_name: Some("UpdateSettingRequest".into()),
+            }),
+            response_type: Some(RustType::Named("Setting".into())),
+            errors: vec![],
+        };
+        let spec = make_spec(vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("struct UpdateUserSettingInput {"));
+        assert!(code.contains("user_id: String,"));
+        assert!(code.contains("force: Option<bool>,"));
+        assert!(code.contains("value: String,"));
+        assert!(code.contains("&input.user_id"));
+    }
+
+    // -- Query option in tool method uses as_deref --
+
+    #[test]
+    fn query_option_uses_as_deref_in_tool() {
+        let op = Operation {
+            id: "search".into(),
+            method: HttpMethod::Get,
+            path: "/search".into(),
+            summary: Some("Search".into()),
+            description: None,
+            parameters: vec![OpParameter {
+                name: "q".into(),
+                rust_name: "q".into(),
+                location: ParamLocation::Query,
+                required: false,
+                rust_type: RustType::Option(Box::new(RustType::String)),
+                description: None,
+            }],
+            request_body: None,
+            response_type: Some(RustType::Value),
+            errors: vec![],
+        };
+        let spec = make_spec(vec![op]);
+        let code = generate(&spec);
+        assert!(
+            code.contains("input.q.as_deref()"),
+            "Option query param should use as_deref in tool method"
+        );
+    }
+
+    // -- Non-option query param passed directly --
+
+    #[test]
+    fn query_non_option_passed_directly_in_tool() {
+        let op = Operation {
+            id: "list_items".into(),
+            method: HttpMethod::Get,
+            path: "/items".into(),
+            summary: Some("List items".into()),
+            description: None,
+            parameters: vec![OpParameter {
+                name: "limit".into(),
+                rust_name: "limit".into(),
+                location: ParamLocation::Query,
+                required: true,
+                rust_type: RustType::I64,
+                description: None,
+            }],
+            request_body: None,
+            response_type: Some(RustType::Value),
+            errors: vec![],
+        };
+        let spec = make_spec(vec![op]);
+        let code = generate(&spec);
+        assert!(
+            code.contains("input.limit"),
+            "required query param should be passed directly"
+        );
+    }
+
+    // -- Header params are NOT included in MCP input struct --
+
+    #[test]
+    fn header_params_excluded_from_input_struct() {
+        let op = Operation {
+            id: "get_item".into(),
+            method: HttpMethod::Get,
+            path: "/items/{id}".into(),
+            summary: Some("Get item".into()),
+            description: None,
+            parameters: vec![
+                OpParameter {
+                    name: "id".into(),
+                    rust_name: "id".into(),
+                    location: ParamLocation::Path,
+                    required: true,
+                    rust_type: RustType::String,
+                    description: None,
+                },
+                OpParameter {
+                    name: "X-Request-Id".into(),
+                    rust_name: "x_request_id".into(),
+                    location: ParamLocation::Header,
+                    required: false,
+                    rust_type: RustType::Option(Box::new(RustType::String)),
+                    description: None,
+                },
+            ],
+            request_body: None,
+            response_type: Some(RustType::Named("Item".into())),
+            errors: vec![],
+        };
+        let spec = make_spec(vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("id: String,"));
+        assert!(
+            !code.contains("x_request_id"),
+            "header params should not appear in MCP input struct"
+        );
+    }
+
+    // -- Escape string handles combined special chars --
+
+    #[test]
+    fn escape_string_combined() {
+        assert_eq!(
+            escape_string("say \"hello\"\nand\\goodbye"),
+            "say \\\"hello\\\" and\\\\goodbye"
+        );
+    }
+
+    // -- input_field_type with Vec --
+
+    #[test]
+    fn input_field_type_vec() {
+        assert_eq!(
+            input_field_type(&RustType::Vec(Box::new(RustType::String)), true),
+            "Vec<String>"
+        );
+        assert_eq!(
+            input_field_type(&RustType::Vec(Box::new(RustType::String)), false),
+            "Option<Vec<String>>"
+        );
+    }
+
+    // -- MCP struct derives Debug and Clone --
+
+    #[test]
+    fn mcp_struct_has_derive() {
+        let spec = make_spec(vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("#[derive(Debug, Clone)]"));
+    }
+
+    // -- Multiple operations generate multiple tools --
+
+    #[test]
+    fn multiple_operations_generate_multiple_tools() {
+        let op1 = make_get_op("list_items", "/items");
+        let op2 = Operation {
+            id: "get_item".into(),
+            method: HttpMethod::Get,
+            path: "/items/{id}".into(),
+            summary: Some("Get item".into()),
+            description: None,
+            parameters: vec![OpParameter {
+                name: "id".into(),
+                rust_name: "id".into(),
+                location: ParamLocation::Path,
+                required: true,
+                rust_type: RustType::String,
+                description: None,
+            }],
+            request_body: None,
+            response_type: Some(RustType::Named("Item".into())),
+            errors: vec![],
+        };
+        let spec = make_spec(vec![op1, op2]);
+        let code = generate(&spec);
+        assert!(code.contains("async fn list_items("));
+        assert!(code.contains("async fn get_item("));
+    }
+
+    // -- stop_ prefix uses simple success message --
+
+    #[test]
+    fn stop_operations_use_simple_success_message() {
+        let op = Operation {
+            id: "stop_service".into(),
+            method: HttpMethod::Post,
+            path: "/services/{id}/stop".into(),
+            summary: Some("Stop a service".into()),
+            description: None,
+            parameters: vec![OpParameter {
+                name: "id".into(),
+                rust_name: "id".into(),
+                location: ParamLocation::Path,
+                required: true,
+                rust_type: RustType::String,
+                description: None,
+            }],
+            request_body: None,
+            response_type: Some(RustType::Value),
+            errors: vec![],
+        };
+        let spec = make_spec(vec![op]);
+        let code = generate(&spec);
+        assert!(
+            code.contains("Ok(_) => format!(\"Success:"),
+            "stop_ prefixed operations should use simple success message"
+        );
+    }
+
+    // -- Request body construction with no type_name uses fallback --
+
+    #[test]
+    fn request_body_construction_fallback_name() {
+        let op = Operation {
+            id: "send_data".into(),
+            method: HttpMethod::Post,
+            path: "/data".into(),
+            summary: Some("Send data".into()),
+            description: None,
+            parameters: vec![],
+            request_body: Some(OpRequestBody {
+                required: true,
+                fields: vec![FieldDef {
+                    name: "payload".into(),
+                    rust_name: "payload".into(),
+                    rust_type: RustType::String,
+                    required: true,
+                    description: None,
+                    default_value: None,
+                }],
+                type_name: None,
+            }),
+            response_type: Some(RustType::Named("Result".into())),
+            errors: vec![],
+        };
+        let spec = make_spec(vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("SendDataRequest"));
+    }
 }
