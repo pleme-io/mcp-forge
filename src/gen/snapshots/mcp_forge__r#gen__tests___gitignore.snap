@@ -1,0 +1,6 @@
+---
+source: src/gen/mod.rs
+expression: content
+---
+/target
+/result

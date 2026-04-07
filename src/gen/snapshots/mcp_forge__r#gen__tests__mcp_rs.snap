@@ -1,0 +1,127 @@
+---
+source: src/gen/mod.rs
+expression: code
+---
+use rmcp::{
+    ServerHandler, ServiceExt,
+    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
+    model::{ServerCapabilities, ServerInfo},
+    schemars, tool, tool_handler, tool_router,
+    transport::stdio,
+};
+use serde::Deserialize;
+
+use crate::auth;
+use crate::client::PetStoreClient;
+use crate::config::PetStoreConfig;
+use crate::format;
+
+// -- MCP tool input types --
+//
+// Each struct maps to an operation from the API spec. Field descriptions
+// are preserved for schemars -> MCP tool schema generation.
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct ListPetsInput {
+    #[schemars(description = "Max items to return")]
+    limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct GetPetInput {
+    pet_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct CreatePetInput {
+    #[schemars(description = "The pet name")]
+    name: String,
+    tag: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct DeletePetInput {
+    pet_id: String,
+}
+
+// -- MCP Server --
+
+#[derive(Debug, Clone)]
+struct PetStoreMcp {
+    client: PetStoreClient,
+    tool_router: ToolRouter<Self>,
+}
+
+#[tool_router]
+impl PetStoreMcp {
+    fn new() -> Result<Self, String> {
+        let config = PetStoreConfig::load();
+        let api_key = auth::resolve_api_key(None, &config).map_err(|e| e.to_string())?;
+        let client =
+            PetStoreClient::new(&config.api_url, &api_key).map_err(|e| e.to_string())?;
+
+        Ok(Self {
+            client,
+            tool_router: Self::tool_router(),
+        })
+    }
+
+    #[tool(description = "List all pets")]
+    async fn list_pets(&self, Parameters(input): Parameters<ListPetsInput>) -> String {
+        match self.client.list_pets(input.limit.as_deref()).await {
+            Ok(result) => format::format_list_pets(&result),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Get a pet by ID")]
+    async fn get_pet(&self, Parameters(input): Parameters<GetPetInput>) -> String {
+        match self.client.get_pet(&input.pet_id).await {
+            Ok(result) => format::format_get_pet(&result),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Create a pet")]
+    async fn create_pet(&self, Parameters(input): Parameters<CreatePetInput>) -> String {
+        let req = crate::api::types::CreatePetRequest {
+            name: input.name.clone(),
+            tag: input.tag.clone(),
+        };
+        match self.client.create_pet(&req).await {
+            Ok(result) => format::format_create_pet(&result),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Delete a pet")]
+    async fn delete_pet(&self, Parameters(input): Parameters<DeletePetInput>) -> String {
+        match self.client.delete_pet(&input.pet_id).await {
+            Ok(_) => format!("Success: DELETE /pets/{petId}"),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+}
+
+#[tool_handler]
+impl ServerHandler for PetStoreMcp {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo {
+            instructions: Some(
+                "A sample pet store API."
+                    .into(),
+            ),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            ..Default::default()
+        }
+    }
+}
+
+// -- Entry point --
+
+pub async fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let server = PetStoreMcp::new()?.serve(stdio()).await?;
+    server.waiting().await?;
+    Ok(())
+}

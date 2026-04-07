@@ -1,0 +1,62 @@
+---
+source: src/gen/mod.rs
+expression: content
+---
+use serde::Deserialize;
+use std::path::PathBuf;
+
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct PetStoreConfig {
+    pub api_url: String,
+    pub api_key_file: PathBuf,
+}
+
+impl Default for PetStoreConfig {
+    fn default() -> Self {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+        Self {
+            api_url: "https://api.petstore.example.com/v2".into(),
+            api_key_file: PathBuf::from(&home).join(".config/pet_store/api-key"),
+        }
+    }
+}
+
+impl PetStoreConfig {
+    pub fn load() -> Self {
+        // Priority:
+        // 1. PET_STORE_CONFIG env (set by Nix HM module for MCP server context)
+        // 2. XDG_CONFIG_HOME/pet_store/pet_store.yaml
+        // 3. ~/.config/pet_store/pet_store.yaml
+        // 4. Defaults
+
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+
+        let candidates: Vec<PathBuf> = [
+            // Nix module sets this for MCP server processes that lack user env
+            std::env::var("PET_STORE_CONFIG").map(PathBuf::from).ok(),
+            std::env::var("XDG_CONFIG_HOME")
+                .map(|x| PathBuf::from(x).join("pet_store/pet_store.yaml"))
+                .ok(),
+            Some(PathBuf::from(&home).join(".config/pet_store/pet_store.yaml")),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+
+        for candidate in &candidates {
+            if candidate.exists() {
+                if let Ok(content) = std::fs::read_to_string(candidate) {
+                    match serde_yaml_ng::from_str::<Self>(&content) {
+                        Ok(config) => return config,
+                        Err(e) => {
+                            tracing::warn!("failed to parse {}: {e}", candidate.display());
+                        }
+                    }
+                }
+            }
+        }
+
+        Self::default()
+    }
+}

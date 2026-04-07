@@ -1,0 +1,272 @@
+---
+source: src/gen/mod.rs
+expression: code
+---
+use crate::api::types::*;
+use crate::error::{PetStoreError, Result};
+
+/// HTTP client for the PetStore API.
+///
+/// A sample pet store API.
+#[derive(Debug, Clone)]
+pub struct PetStoreClient {
+    inner: reqwest::Client,
+    base_url: String,
+    api_key: String,
+}
+
+impl PetStoreClient {
+    /// Create a new client.
+    pub fn new(base_url: &str, api_key: &str) -> Result<Self> {
+        let inner = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .user_agent("pleme-io/pet_store 1.0.0")
+            .build()
+            .map_err(PetStoreError::Request)?;
+
+        Ok(Self {
+            inner,
+            base_url: base_url.trim_end_matches('/').to_string(),
+            api_key: api_key.to_string(),
+        })
+    }
+
+    fn url(&self, path: &str) -> String {
+        format!("{}/{}", self.base_url, path.trim_start_matches('/'))
+    }
+
+    async fn get<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let resp = self
+            .inner
+            .get(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .send()
+            .await
+            .map_err(PetStoreError::Request)?;
+        Self::handle_response(resp).await
+    }
+
+    async fn post<B: serde::Serialize, T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        let resp = self
+            .inner
+            .post(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .json(body)
+            .send()
+            .await
+            .map_err(PetStoreError::Request)?;
+        Self::handle_response(resp).await
+    }
+
+    async fn post_empty<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let resp = self
+            .inner
+            .post(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .send()
+            .await
+            .map_err(PetStoreError::Request)?;
+        Self::handle_response(resp).await
+    }
+
+    async fn put<B: serde::Serialize, T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        let resp = self
+            .inner
+            .put(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .json(body)
+            .send()
+            .await
+            .map_err(PetStoreError::Request)?;
+        Self::handle_response(resp).await
+    }
+
+    async fn patch<B: serde::Serialize, T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        let resp = self
+            .inner
+            .patch(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .json(body)
+            .send()
+            .await
+            .map_err(PetStoreError::Request)?;
+        Self::handle_response(resp).await
+    }
+
+    async fn delete<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let resp = self
+            .inner
+            .delete(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .send()
+            .await
+            .map_err(PetStoreError::Request)?;
+        Self::handle_response(resp).await
+    }
+
+    async fn delete_empty(&self, path: &str) -> Result<()> {
+        let resp = self
+            .inner
+            .delete(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .send()
+            .await
+            .map_err(PetStoreError::Request)?;
+        Self::handle_empty_response(resp).await
+    }
+
+    async fn post_empty_no_response(&self, path: &str) -> Result<()> {
+        let resp = self
+            .inner
+            .post(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .send()
+            .await
+            .map_err(PetStoreError::Request)?;
+        Self::handle_empty_response(resp).await
+    }
+
+    async fn post_no_response<B: serde::Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<()> {
+        let resp = self
+            .inner
+            .post(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .json(body)
+            .send()
+            .await
+            .map_err(PetStoreError::Request)?;
+        Self::handle_empty_response(resp).await
+    }
+
+    async fn put_no_response<B: serde::Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<()> {
+        let resp = self
+            .inner
+            .put(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .json(body)
+            .send()
+            .await
+            .map_err(PetStoreError::Request)?;
+        Self::handle_empty_response(resp).await
+    }
+
+    async fn patch_no_response<B: serde::Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<()> {
+        let resp = self
+            .inner
+            .patch(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .json(body)
+            .send()
+            .await
+            .map_err(PetStoreError::Request)?;
+        Self::handle_empty_response(resp).await
+    }
+
+    async fn get_empty(&self, path: &str) -> Result<()> {
+        let resp = self
+            .inner
+            .get(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .send()
+            .await
+            .map_err(PetStoreError::Request)?;
+        Self::handle_empty_response(resp).await
+    }
+
+    async fn handle_response<T: serde::de::DeserializeOwned>(
+        resp: reqwest::Response,
+    ) -> Result<T> {
+        let status = resp.status().as_u16();
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(PetStoreError::Api { status, body });
+        }
+        let text = resp.text().await.map_err(PetStoreError::Request)?;
+        serde_json::from_str(&text).map_err(PetStoreError::Json)
+    }
+
+    async fn handle_empty_response(
+        resp: reqwest::Response,
+    ) -> Result<()> {
+        let status = resp.status().as_u16();
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(PetStoreError::Api { status, body });
+        }
+        Ok(())
+    }
+
+    // -- Public API methods --
+
+    /// GET /pets
+    ///
+    /// List all pets
+    pub async fn list_pets(
+        &self,
+        limit: Option<i64>,
+    ) -> Result<Vec<Pet>> {
+        let mut path = format!("/pets");
+        let mut has_query = false;
+        if let Some(ref v) = limit {
+            path.push_str(if has_query { "&" } else { "?" });
+            path.push_str(&format!("limit={}", urlencoding::encode(&v.to_string())));
+            has_query = true;
+        }
+        self.get(&path).await
+    }
+
+    /// GET /pets/{petId}
+    ///
+    /// Get a pet by ID
+    pub async fn get_pet(
+        &self,
+        pet_id: &str,
+    ) -> Result<Pet> {
+        self.get(&format!("/pets/{pet_id}")).await
+    }
+
+    /// POST /pets
+    ///
+    /// Create a pet
+    pub async fn create_pet(
+        &self,
+        req: &CreatePetRequest,
+    ) -> Result<Pet> {
+        self.post("/pets", req).await
+    }
+
+    /// DELETE /pets/{petId}
+    ///
+    /// Delete a pet
+    pub async fn delete_pet(
+        &self,
+        pet_id: &str,
+    ) -> Result<()> {
+        self.delete_empty(&format!("/pets/{pet_id}")).await
+    }
+
+}

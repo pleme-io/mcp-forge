@@ -635,4 +635,44 @@ mod tests {
         assert!(!client.contains("bearer_auth"));
         assert!(!client.contains("basic_auth"));
     }
+
+    // -- Snapshot tests for codegen output stability --
+
+    #[test]
+    fn snapshot_types_rs() {
+        let spec = make_petstore_spec();
+        let code = super::types::generate(&spec);
+        insta::assert_snapshot!("types_rs", code);
+    }
+
+    #[test]
+    fn snapshot_client_rs() {
+        let spec = make_petstore_spec();
+        let code = super::client::generate(&spec);
+        insta::assert_snapshot!("client_rs", code);
+    }
+
+    #[test]
+    fn snapshot_mcp_rs() {
+        let spec = make_petstore_spec();
+        let code = super::mcp::generate(&spec);
+        insta::assert_snapshot!("mcp_rs", code);
+    }
+
+    #[test]
+    fn snapshot_format_rs() {
+        let spec = make_petstore_spec();
+        let code = super::format::generate(&spec);
+        insta::assert_snapshot!("format_rs", code);
+    }
+
+    #[test]
+    fn snapshot_scaffold_files() {
+        let spec = make_petstore_spec();
+        let files = super::scaffold::generate_scaffold(&spec);
+        for (path, content) in &files {
+            let snap_name = path.replace('/', "_").replace('.', "_");
+            insta::assert_snapshot!(snap_name, content);
+        }
+    }
 }

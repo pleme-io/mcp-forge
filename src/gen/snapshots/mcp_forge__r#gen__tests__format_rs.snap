@@ -1,0 +1,35 @@
+---
+source: src/gen/mod.rs
+expression: code
+---
+use crate::api::types::*;
+use std::fmt::Write;
+
+pub fn truncate(s: &str, max: usize) -> String {
+    if s.len() > max {
+        format!("{}...", &s[..max.saturating_sub(3)])
+    } else {
+        s.to_string()
+    }
+}
+
+pub fn format_list_pets(data: &Vec<Pet>) -> String {
+    format!("{:#?}", data)
+}
+
+pub fn format_get_pet(data: &Pet) -> String {
+    let mut out = String::with_capacity(512);
+    let _ = writeln!(out, "Id: {}", data.id);
+    let _ = writeln!(out, "Name: {}", data.name);
+    if let Some(ref v) = data.tag {
+        let _ = writeln!(out, "Tag: {v}");
+    }
+    if let Some(ref v) = data.status {
+        let _ = writeln!(out, "Status: {v}");
+    }
+    out
+}
+
+pub fn format_create_pet(data: &Pet) -> String {
+    format_get_pet(data)
+}

@@ -1,0 +1,111 @@
+---
+source: src/gen/mod.rs
+expression: content
+---
+# PetStore home-manager module -- MCP server + CLI
+#
+# Namespace: services.pet_store.*
+#
+# Provides:
+#   - MCP server entry (consumed by claude/anvil for all AI agents)
+#   - CLI binary in PATH
+#   - Config file generation (~/.config/pet_store/pet_store.yaml)
+#   - Env propagation: PET_STORE_CONFIG passed to MCP server process
+#
+# Usage:
+#   services.pet_store.package = inputs.pet_store.packages.${system}.default;
+#   services.pet_store.enable = true;
+#   services.pet_store.mcp.enable = true;
+{ hmHelpers }:
+{
+  lib,
+  config,
+  pkgs,
+  ...
+}:
+with lib; let
+  inherit (hmHelpers) mkMcpOptions mkMcpServerEntry;
+  cfg = config.services.pet_store;
+  mcpCfg = cfg.mcp;
+  homeDir = config.home.homeDirectory;
+
+  defaultApiKeyFile = "${homeDir}/.config/pet_store/api-key";
+
+  resolvedApiKeyFile =
+    if cfg.settings.apiKeyFile != null
+    then cfg.settings.apiKeyFile
+    else defaultApiKeyFile;
+
+  configFile = pkgs.writeText "pet_store.yaml"
+    (builtins.toJSON ({
+      api_url = cfg.settings.apiUrl;
+      api_key_file = resolvedApiKeyFile;
+    }));
+
+  mcpEnv = optionalAttrs cfg.settings.propagateApiKey {
+    PET_STORE_CONFIG = "${configFile}";
+  };
+in {
+  options.services.pet_store = {
+    enable = mkEnableOption "pet_store -- CLI + MCP server";
+
+    package = mkOption {
+      type = types.package;
+      description = ''
+        The pet_store binary package. Must be set explicitly from your flake input:
+          services.pet_store.package = inputs.pet_store.packages.''${system}.default;
+      '';
+    };
+
+    mcp = mkMcpOptions {
+      defaultPackage = pkgs.hello;
+    };
+
+    settings = {
+      apiUrl = mkOption {
+        type = types.str;
+        default = "https://api.petstore.example.com/v2";
+        description = "API base URL.";
+      };
+
+      apiKeyFile = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = ''
+          Path to file containing the API key.
+          When null, defaults to ~/.config/pet_store/api-key.
+        '';
+      };
+
+      propagateApiKey = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Pass config file path to the MCP server process via PET_STORE_CONFIG env.
+          Ensures the MCP server can find the API key when launched by Claude
+          Code or other MCP clients that don't inherit user environment.
+        '';
+      };
+    };
+  };
+
+  config = mkMerge [
+    {
+      services.pet_store.mcp.package = mkDefault cfg.package;
+    }
+
+    (mkIf cfg.enable {
+      home.packages = [ cfg.package ];
+
+      xdg.configFile."pet_store/pet_store.yaml".source = configFile;
+    })
+
+    (mkIf mcpCfg.enable {
+      services.pet_store.mcp.serverEntry = mkMcpServerEntry ({
+        command = "${mcpCfg.package}/bin/pet_store";
+      } // optionalAttrs (mcpEnv != {}) {
+        env = mcpEnv;
+      });
+    })
+  ];
+}

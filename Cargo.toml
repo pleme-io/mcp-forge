@@ -30,6 +30,8 @@ opt-level = "z"
 strip = true
 
 [dev-dependencies]
+insta = "1.47.2"
+pretty_assertions = "1.4.1"
 tempfile = "3"
 
 [lints.clippy]

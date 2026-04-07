@@ -2115,4 +2115,155 @@ components:
         let api = parse_ir(yaml);
         assert_eq!(api.auth, AuthMethod::Bearer);
     }
+
+    // -- RustType methods --
+
+    #[test]
+    fn rust_type_is_option() {
+        assert!(RustType::Option(Box::new(RustType::String)).is_option());
+        assert!(!RustType::String.is_option());
+        assert!(!RustType::Vec(Box::new(RustType::String)).is_option());
+        assert!(!RustType::Value.is_option());
+    }
+
+    #[test]
+    fn rust_type_is_vec() {
+        assert!(RustType::Vec(Box::new(RustType::String)).is_vec());
+        assert!(!RustType::String.is_vec());
+        assert!(!RustType::Option(Box::new(RustType::String)).is_vec());
+        assert!(!RustType::Value.is_vec());
+    }
+
+    #[test]
+    fn rust_type_display_matches_to_string() {
+        let cases = vec![
+            RustType::String,
+            RustType::I64,
+            RustType::U64,
+            RustType::F64,
+            RustType::Bool,
+            RustType::Value,
+            RustType::Vec(Box::new(RustType::Named("Pet".into()))),
+            RustType::Option(Box::new(RustType::Vec(Box::new(RustType::I64)))),
+            RustType::Named("MyType".into()),
+        ];
+        for rt in &cases {
+            assert_eq!(format!("{rt}"), rt.to_string());
+        }
+    }
+
+    // -- Edge case: empty security schemes section --
+
+    #[test]
+    fn empty_security_schemes_yields_no_auth() {
+        let yaml = r#"
+info:
+  title: EmptySchemes
+  version: "1.0.0"
+paths: {}
+components:
+  securitySchemes: {}
+"#;
+        let api = parse_ir(yaml);
+        assert_eq!(api.auth, AuthMethod::None);
+    }
+
+    // -- Multiple security schemes: first match wins --
+
+    #[test]
+    fn multiple_security_schemes_first_wins() {
+        let yaml = r#"
+info:
+  title: MultiScheme
+  version: "1.0.0"
+paths: {}
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-Key
+"#;
+        let api = parse_ir(yaml);
+        assert!(matches!(api.auth, AuthMethod::Bearer | AuthMethod::ApiKeyHeader(_)));
+    }
+
+    // -- Deeply nested allOf --
+
+    #[test]
+    fn deeply_nested_ref_types_resolved() {
+        let yaml = r##"
+info:
+  title: DeepRef
+  version: "1.0.0"
+paths:
+  /items:
+    get:
+      operationId: getItems
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Item"
+components:
+  schemas:
+    Item:
+      type: object
+      required:
+        - id
+        - sub
+      properties:
+        id:
+          type: integer
+        sub:
+          $ref: "#/components/schemas/SubItem"
+    SubItem:
+      type: object
+      required:
+        - value
+      properties:
+        value:
+          type: string
+"##;
+        let api = parse_ir(yaml);
+        assert!(api.types.iter().any(|t| t.rust_name == "Item"));
+        assert!(api.types.iter().any(|t| t.rust_name == "SubItem"));
+        let item = api.types.iter().find(|t| t.rust_name == "Item").unwrap();
+        let sub_field = item.fields.iter().find(|f| f.rust_name == "sub").unwrap();
+        assert_eq!(sub_field.rust_type, RustType::Named("SubItem".into()));
+    }
+
+    // -- Operation with both summary and description --
+
+    #[test]
+    fn operation_with_both_summary_and_description() {
+        let yaml = r#"
+info:
+  title: BothDesc
+  version: "1.0.0"
+paths:
+  /test:
+    get:
+      operationId: test
+      summary: Short summary
+      description: Longer description for docs
+      responses:
+        "200":
+          description: ok
+"#;
+        let api = parse_ir(yaml);
+        let op = &api.operations[0];
+        assert_eq!(op.summary.as_deref(), Some("Short summary"));
+        assert_eq!(
+            op.description.as_deref(),
+            Some("Longer description for docs")
+        );
+    }
 }
