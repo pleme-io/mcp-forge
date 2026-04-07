@@ -293,12 +293,7 @@ fn generate_tool_method(out: &mut String, op: &Operation) {
 
 fn generate_request_body_construction(out: &mut String, op: &Operation) {
     if let Some(ref body) = op.request_body {
-        let request_type = body
-            .type_name
-            .clone()
-            .unwrap_or_else(|| {
-                format!("{}Request", op.id.to_upper_camel_case())
-            });
+        let request_type = op.request_body_type_name();
         out.push_str(&format!(
             "        let req = crate::api::types::{request_type} {{\n"
         ));

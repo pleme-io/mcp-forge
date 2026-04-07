@@ -91,6 +91,20 @@ impl std::str::FromStr for HttpMethod {
     }
 }
 
+impl Operation {
+    /// Resolve the request body type name: either the explicit `type_name` from
+    /// the body schema, or a fallback of `{OperationId}Request` in PascalCase.
+    #[must_use]
+    pub fn request_body_type_name(&self) -> String {
+        if let Some(ref body) = self.request_body {
+            if let Some(ref name) = body.type_name {
+                return name.clone();
+            }
+        }
+        format!("{}Request", self.id.to_upper_camel_case())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ErrorResponse {
     pub status_code: String,

@@ -543,12 +543,7 @@ fn is_option_type(rt: &RustType) -> bool {
 }
 
 fn request_body_type_name(op: &Operation) -> String {
-    if let Some(ref body) = op.request_body
-        && let Some(ref name) = body.type_name
-    {
-        return name.clone();
-    }
-    format!("{}Request", op.id.to_upper_camel_case())
+    op.request_body_type_name()
 }
 
 #[cfg(test)]
