@@ -188,7 +188,7 @@ struct Converter<'a> {
     spec: &'a OpenApiSpec,
     types: Vec<TypeDef>,
     /// Track which component schemas we've already emitted to avoid duplicates.
-    emitted: std::collections::HashSet<std::string::String>,
+    emitted: std::collections::BTreeSet<std::string::String>,
 }
 
 impl<'a> Converter<'a> {
@@ -196,7 +196,7 @@ impl<'a> Converter<'a> {
         Self {
             spec,
             types: Vec::new(),
-            emitted: std::collections::HashSet::new(),
+            emitted: std::collections::BTreeSet::new(),
         }
     }
 

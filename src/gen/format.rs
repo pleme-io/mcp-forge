@@ -25,7 +25,7 @@ pub fn generate(spec: &ApiSpec) -> String {
 
     // Generate a format function for each operation that returns a rich response.
     // Skip simple action responses (stop/delete) -- those are handled inline in mcp.rs.
-    let mut generated_types = std::collections::HashSet::new();
+    let mut generated_types = std::collections::BTreeSet::new();
 
     for op in &spec.operations {
         // Skip simple action operations
