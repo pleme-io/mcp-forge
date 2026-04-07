@@ -154,6 +154,15 @@ impl RustType {
     pub fn is_vec(&self) -> bool {
         matches!(self, Self::Vec(_))
     }
+
+    #[must_use]
+    pub fn contains_named(&self, name: &str) -> bool {
+        match self {
+            Self::Named(n) => n == name,
+            Self::Vec(inner) | Self::Option(inner) => inner.contains_named(name),
+            _ => false,
+        }
+    }
 }
 
 impl std::fmt::Display for RustType {

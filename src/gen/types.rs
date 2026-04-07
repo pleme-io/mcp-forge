@@ -156,17 +156,8 @@ fn is_response_type(rust_name: &str, spec: &ApiSpec) -> bool {
     spec.operations.iter().any(|op| {
         op.response_type
             .as_ref()
-            .is_some_and(|rt| rust_type_contains_named(rt, rust_name))
+            .is_some_and(|rt| rt.contains_named(rust_name))
     })
-}
-
-/// Check if a `RustType` references a specific named type.
-fn rust_type_contains_named(rt: &RustType, name: &str) -> bool {
-    match rt {
-        RustType::Named(n) => n == name,
-        RustType::Vec(inner) | RustType::Option(inner) => rust_type_contains_named(inner, name),
-        _ => false,
-    }
 }
 
 /// Infer the serde `rename_all` strategy for enum variants.
@@ -883,21 +874,21 @@ mod tests {
         assert!(!uses_camel_case(&item));
     }
 
-    // -- rust_type_contains_named deep nesting --
+    // -- RustType::contains_named deep nesting --
 
     #[test]
     fn rust_type_contains_named_in_option_vec() {
         let rt = RustType::Option(Box::new(RustType::Vec(Box::new(RustType::Named(
             "Pet".into(),
         )))));
-        assert!(rust_type_contains_named(&rt, "Pet"));
-        assert!(!rust_type_contains_named(&rt, "Dog"));
+        assert!(rt.contains_named("Pet"));
+        assert!(!rt.contains_named("Dog"));
     }
 
     #[test]
     fn rust_type_contains_named_primitives_false() {
-        assert!(!rust_type_contains_named(&RustType::String, "Foo"));
-        assert!(!rust_type_contains_named(&RustType::I64, "Foo"));
-        assert!(!rust_type_contains_named(&RustType::Value, "Foo"));
+        assert!(!RustType::String.contains_named("Foo"));
+        assert!(!RustType::I64.contains_named("Foo"));
+        assert!(!RustType::Value.contains_named("Foo"));
     }
 }
