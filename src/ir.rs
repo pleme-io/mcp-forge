@@ -28,6 +28,17 @@ pub enum AuthMethod {
     None,
 }
 
+impl std::fmt::Display for AuthMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Bearer => write!(f, "Bearer"),
+            Self::Basic => write!(f, "Basic"),
+            Self::ApiKeyHeader(header) => write!(f, "ApiKey({header})"),
+            Self::None => write!(f, "None"),
+        }
+    }
+}
+
 // ── Operations ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -104,6 +115,16 @@ pub enum ParamLocation {
     Path,
     Query,
     Header,
+}
+
+impl std::fmt::Display for ParamLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Path => write!(f, "path"),
+            Self::Query => write!(f, "query"),
+            Self::Header => write!(f, "header"),
+        }
+    }
 }
 
 // ── Request Body ───────────────────────────────────────────────────────────
