@@ -675,4 +675,178 @@ mod tests {
             insta::assert_snapshot!(snap_name, content);
         }
     }
+
+    // -- End-to-end: YAML spec → IR → generated project --
+
+    #[test]
+    fn end_to_end_yaml_to_generated_project() {
+        let yaml = r##"
+info:
+  title: Widget API
+  description: Manages widgets
+  version: "1.0.0"
+servers:
+  - url: https://widgets.example.com/v1
+paths:
+  /widgets:
+    get:
+      operationId: listWidgets
+      summary: List all widgets
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: A list of widgets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Widget"
+    post:
+      operationId: createWidget
+      summary: Create a widget
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWidgetRequest"
+      responses:
+        "201":
+          description: Widget created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Widget"
+  /widgets/{widgetId}:
+    parameters:
+      - name: widgetId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getWidget
+      summary: Get a widget
+      responses:
+        "200":
+          description: A widget
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Widget"
+    delete:
+      operationId: deleteWidget
+      summary: Delete a widget
+      responses:
+        "204":
+          description: Widget deleted
+components:
+  schemas:
+    Widget:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        color:
+          type: string
+          enum:
+            - red
+            - green
+            - blue
+    CreateWidgetRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        color:
+          type: string
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-Widget-Key
+"##;
+        let openapi: crate::spec::OpenApiSpec =
+            serde_yaml_ng::from_str(yaml).unwrap();
+        let api = crate::ir::ApiSpec::from_openapi(&openapi);
+
+        assert_eq!(api.name, "Widget API");
+        assert_eq!(api.version, "1.0.0");
+        assert_eq!(
+            api.auth,
+            crate::ir::AuthMethod::ApiKeyHeader("X-Widget-Key".into())
+        );
+        assert_eq!(api.operations.len(), 4);
+        assert!(api.types.len() >= 2);
+
+        let dir = tempfile::tempdir().unwrap();
+        generate(&api, dir.path()).unwrap();
+
+        let types_rs = std::fs::read_to_string(dir.path().join("src/api/types.rs")).unwrap();
+        assert!(types_rs.contains("pub struct Widget {"));
+        assert!(types_rs.contains("pub enum Color {"));
+
+        let client_rs = std::fs::read_to_string(dir.path().join("src/client.rs")).unwrap();
+        assert!(client_rs.contains("X-Widget-Key"));
+        assert!(client_rs.contains("fn list_widgets("));
+        assert!(client_rs.contains("fn create_widget("));
+        assert!(client_rs.contains("fn get_widget("));
+        assert!(client_rs.contains("fn delete_widget("));
+
+        let mcp_rs = std::fs::read_to_string(dir.path().join("src/mcp.rs")).unwrap();
+        assert!(mcp_rs.contains("WidgetApiMcp"));
+        assert!(mcp_rs.contains("WidgetApiClient"));
+
+        let config_rs = std::fs::read_to_string(dir.path().join("src/config.rs")).unwrap();
+        assert!(config_rs.contains("https://widgets.example.com/v1"));
+    }
+
+    // -- API key auth has correct header in client --
+
+    #[test]
+    fn generate_api_key_auth_includes_header_in_all_helpers() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut spec = make_petstore_spec();
+        spec.auth = AuthMethod::ApiKeyHeader("X-My-Key".into());
+        generate(&spec, dir.path()).unwrap();
+
+        let client = std::fs::read_to_string(dir.path().join("src/client.rs")).unwrap();
+        let header_count = client.matches("X-My-Key").count();
+        assert!(
+            header_count >= 10,
+            "API key header should appear in all HTTP helper methods, found {header_count}"
+        );
+    }
+
+    // -- Empty types still generates valid types.rs --
+
+    #[test]
+    fn generate_empty_types_produces_import_only() {
+        let spec = ApiSpec {
+            name: "Empty".into(),
+            description: None,
+            version: "1.0.0".into(),
+            base_url: None,
+            auth: AuthMethod::None,
+            operations: vec![],
+            types: vec![],
+        };
+        let code = super::types::generate(&spec);
+        assert!(code.contains("use serde::{Deserialize, Serialize};"));
+        assert!(!code.contains("pub struct"));
+        assert!(!code.contains("pub enum"));
+    }
 }
