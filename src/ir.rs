@@ -19,19 +19,14 @@ pub struct ApiSpec {
     pub types: Vec<TypeDef>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum AuthMethod {
     Bearer,
     Basic,
     ApiKeyHeader(String),
+    #[default]
     None,
-}
-
-impl Default for AuthMethod {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 impl std::fmt::Display for AuthMethod {
@@ -102,10 +97,8 @@ impl Operation {
     /// the body schema, or a fallback of `{OperationId}Request` in PascalCase.
     #[must_use]
     pub fn request_body_type_name(&self) -> String {
-        if let Some(ref body) = self.request_body {
-            if let Some(ref name) = body.type_name {
-                return name.clone();
-            }
+        if let Some(name) = self.request_body.as_ref().and_then(|b| b.type_name.as_ref()) {
+            return name.clone();
         }
         format!("{}Request", self.id.to_upper_camel_case())
     }
@@ -720,13 +713,12 @@ impl<'a> Converter<'a> {
         let fields = self.schema_to_fields(&self.merge_all_of(&resolved_schema));
 
         let type_name = type_name.or_else(|| {
-            if fields.is_empty() {
-                return None;
-            }
-            let name = format!("{operation_id}_body").to_upper_camel_case();
-            let schema_copy = resolved_schema.clone();
-            self.ensure_type(&name, &schema_copy);
-            Some(name)
+            (!fields.is_empty()).then(|| {
+                let name = format!("{operation_id}_body").to_upper_camel_case();
+                let schema_copy = resolved_schema.clone();
+                self.ensure_type(&name, &schema_copy);
+                name
+            })
         });
 
         Some(OpRequestBody {
