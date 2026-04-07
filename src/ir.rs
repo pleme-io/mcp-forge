@@ -206,6 +206,12 @@ impl ApiSpec {
     /// Convert a parsed `OpenAPI` spec into the intermediate representation.
     #[must_use]
     pub fn from_openapi(spec: &OpenApiSpec) -> Self {
+        Self::from(spec)
+    }
+}
+
+impl From<&OpenApiSpec> for ApiSpec {
+    fn from(spec: &OpenApiSpec) -> Self {
         let mut converter = Converter::new(spec);
         converter.run()
     }
