@@ -177,24 +177,18 @@ fn generate_compact_item_format(out: &mut String, typedef: &TypeDef) {
         return;
     }
 
-    // Build format parts
-    let mut parts = Vec::new();
-    let mut args = Vec::new();
+    let args: Vec<String> = key_fields
+        .iter()
+        .map(|field| {
+            if field.rust_type.is_option() {
+                format!("item.{}.as_deref().unwrap_or(\"-\")", field.rust_name)
+            } else {
+                format!("item.{}", field.rust_name)
+            }
+        })
+        .collect();
 
-    for field in &key_fields {
-        if is_option_type(&field.rust_type) {
-            parts.push("{}".to_string());
-            args.push(format!(
-                "item.{}.as_deref().unwrap_or(\"-\")",
-                field.rust_name
-            ));
-        } else {
-            parts.push("{}".to_string());
-            args.push(format!("item.{}", field.rust_name));
-        }
-    }
-
-    let format_str = format!("  {}", parts.join(" | "));
+    let format_str = format!("  {}", vec!["{}"; key_fields.len()].join(" | "));
     let args_str = args.join(", ");
     out.push_str(&format!(
         "        let _ = writeln!(out, \"{format_str}\", {args_str});\n"
@@ -246,14 +240,10 @@ fn find_format_fn_for_type(
     operations: &[Operation],
     current_op: &Operation,
 ) -> Option<String> {
-    operations
-        .iter()
-        .filter(|op| {
-            op.id != current_op.id
-                && op.response_type.as_ref() == Some(rust_type)
-        })
-        .map(|op| format!("format_{}", op.id.to_snake_case()))
-        .next()
+    operations.iter().find_map(|op| {
+        (op.id != current_op.id && op.response_type.as_ref() == Some(rust_type))
+            .then(|| format!("format_{}", op.id.to_snake_case()))
+    })
 }
 
 fn rust_type_to_string(rt: &RustType) -> String {
