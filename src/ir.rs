@@ -20,6 +20,7 @@ pub struct ApiSpec {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AuthMethod {
     Bearer,
     Basic,
@@ -43,6 +44,7 @@ pub struct Operation {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum HttpMethod {
     Get,
     Post,
@@ -59,6 +61,21 @@ impl std::fmt::Display for HttpMethod {
             Self::Put => write!(f, "PUT"),
             Self::Delete => write!(f, "DELETE"),
             Self::Patch => write!(f, "PATCH"),
+        }
+    }
+}
+
+impl std::str::FromStr for HttpMethod {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_ascii_uppercase().as_str() {
+            "GET" => Ok(Self::Get),
+            "POST" => Ok(Self::Post),
+            "PUT" => Ok(Self::Put),
+            "DELETE" => Ok(Self::Delete),
+            "PATCH" => Ok(Self::Patch),
+            other => Err(format!("unknown HTTP method: {other}")),
         }
     }
 }
@@ -82,6 +99,7 @@ pub struct OpParameter {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ParamLocation {
     Path,
     Query,
@@ -129,6 +147,7 @@ pub struct EnumVariant {
 // ── Rust Types ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RustType {
     String,
     I64,
