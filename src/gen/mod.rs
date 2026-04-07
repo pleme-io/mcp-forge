@@ -2,6 +2,8 @@ pub mod client;
 pub mod format;
 pub mod mcp;
 pub mod scaffold;
+#[cfg(test)]
+mod testutil;
 pub mod types;
 
 use crate::ir::ApiSpec;

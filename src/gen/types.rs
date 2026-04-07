@@ -251,61 +251,8 @@ fn is_rust_keyword(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{
-        ApiSpec, AuthMethod, EnumVariant, FieldDef, HttpMethod, Operation, RustType, TypeDef,
-    };
-
-    /// Build a minimal `ApiSpec` with the given types and operations.
-    fn make_spec(types: Vec<TypeDef>, operations: Vec<Operation>) -> ApiSpec {
-        ApiSpec {
-            name: "TestApi".into(),
-            description: None,
-            version: "1.0.0".into(),
-            base_url: None,
-            auth: AuthMethod::None,
-            operations,
-            types,
-        }
-    }
-
-    fn make_field(name: &str, rust_type: RustType, required: bool) -> FieldDef {
-        FieldDef {
-            name: name.into(),
-            rust_name: heck::ToSnakeCase::to_snake_case(name),
-            rust_type,
-            required,
-            description: None,
-            default_value: None,
-        }
-    }
-
-    fn make_struct(name: &str, fields: Vec<FieldDef>) -> TypeDef {
-        TypeDef {
-            name: name.into(),
-            rust_name: heck::ToUpperCamelCase::to_upper_camel_case(name),
-            fields,
-            is_enum: false,
-            enum_variants: Vec::new(),
-            description: None,
-        }
-    }
-
-    fn make_enum(name: &str, variants: Vec<&str>) -> TypeDef {
-        TypeDef {
-            name: name.into(),
-            rust_name: heck::ToUpperCamelCase::to_upper_camel_case(name),
-            fields: Vec::new(),
-            is_enum: true,
-            enum_variants: variants
-                .into_iter()
-                .map(|v| EnumVariant {
-                    name: v.into(),
-                    rust_name: heck::ToUpperCamelCase::to_upper_camel_case(v),
-                })
-                .collect(),
-            description: None,
-        }
-    }
+    use crate::r#gen::testutil::{make_enum, make_field, make_spec_with as make_spec, make_struct};
+    use crate::ir::{EnumVariant, FieldDef, HttpMethod, Operation, RustType, TypeDef};
 
     #[test]
     fn generate_empty_spec_produces_import() {

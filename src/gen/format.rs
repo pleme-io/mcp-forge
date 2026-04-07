@@ -293,55 +293,11 @@ fn is_vec_type(rt: &RustType) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{ApiSpec, AuthMethod, FieldDef, HttpMethod};
-
-    fn make_field(name: &str, rust_type: RustType, required: bool) -> FieldDef {
-        FieldDef {
-            name: name.into(),
-            rust_name: heck::ToSnakeCase::to_snake_case(name),
-            rust_type,
-            required,
-            description: None,
-            default_value: None,
-        }
-    }
-
-    fn make_struct(name: &str, fields: Vec<FieldDef>) -> TypeDef {
-        TypeDef {
-            name: name.into(),
-            rust_name: heck::ToUpperCamelCase::to_upper_camel_case(name),
-            fields,
-            is_enum: false,
-            enum_variants: Vec::new(),
-            description: None,
-        }
-    }
-
-    fn make_get_op_with_response(id: &str, response_type: RustType) -> Operation {
-        Operation {
-            id: id.into(),
-            method: HttpMethod::Get,
-            path: format!("/{id}"),
-            summary: Some(format!("Get {id}")),
-            description: None,
-            parameters: vec![],
-            request_body: None,
-            response_type: Some(response_type),
-            errors: vec![],
-        }
-    }
-
-    fn make_spec(types: Vec<TypeDef>, operations: Vec<Operation>) -> ApiSpec {
-        ApiSpec {
-            name: "TestApi".into(),
-            description: None,
-            version: "1.0.0".into(),
-            base_url: None,
-            auth: AuthMethod::None,
-            operations,
-            types,
-        }
-    }
+    use crate::r#gen::testutil::{
+        make_field, make_get_op as make_get_op_with_response,
+        make_spec_with as make_spec, make_struct,
+    };
+    use crate::ir::HttpMethod;
 
     // -- Top-level generate --
 
