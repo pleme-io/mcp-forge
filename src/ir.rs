@@ -2191,7 +2191,72 @@ components:
         assert_eq!(api.auth, AuthMethod::Bearer);
     }
 
-    // -- RustType methods --
+    // ── HttpMethod FromStr / Display round-trip ─────────────────────────
+
+    #[test]
+    fn http_method_from_str_all_variants() {
+        assert_eq!("GET".parse::<HttpMethod>().unwrap(), HttpMethod::Get);
+        assert_eq!("POST".parse::<HttpMethod>().unwrap(), HttpMethod::Post);
+        assert_eq!("PUT".parse::<HttpMethod>().unwrap(), HttpMethod::Put);
+        assert_eq!("DELETE".parse::<HttpMethod>().unwrap(), HttpMethod::Delete);
+        assert_eq!("PATCH".parse::<HttpMethod>().unwrap(), HttpMethod::Patch);
+    }
+
+    #[test]
+    fn http_method_from_str_case_insensitive() {
+        assert_eq!("get".parse::<HttpMethod>().unwrap(), HttpMethod::Get);
+        assert_eq!("Post".parse::<HttpMethod>().unwrap(), HttpMethod::Post);
+    }
+
+    #[test]
+    fn http_method_from_str_invalid() {
+        assert!("OPTIONS".parse::<HttpMethod>().is_err());
+        assert!("".parse::<HttpMethod>().is_err());
+    }
+
+    #[test]
+    fn http_method_display_from_str_round_trip() {
+        for method in [
+            HttpMethod::Get,
+            HttpMethod::Post,
+            HttpMethod::Put,
+            HttpMethod::Delete,
+            HttpMethod::Patch,
+        ] {
+            let s = method.to_string();
+            let parsed: HttpMethod = s.parse().unwrap();
+            assert_eq!(parsed, method);
+        }
+    }
+
+    // ── AuthMethod Display ──────────────────────────────────────────────
+
+    #[test]
+    fn auth_method_display() {
+        assert_eq!(AuthMethod::Bearer.to_string(), "Bearer");
+        assert_eq!(AuthMethod::Basic.to_string(), "Basic");
+        assert_eq!(
+            AuthMethod::ApiKeyHeader("X-Api-Key".into()).to_string(),
+            "ApiKey(X-Api-Key)"
+        );
+        assert_eq!(AuthMethod::None.to_string(), "None");
+    }
+
+    #[test]
+    fn auth_method_default_is_none() {
+        assert_eq!(AuthMethod::default(), AuthMethod::None);
+    }
+
+    // ── ParamLocation Display ───────────────────────────────────────────
+
+    #[test]
+    fn param_location_display() {
+        assert_eq!(ParamLocation::Path.to_string(), "path");
+        assert_eq!(ParamLocation::Query.to_string(), "query");
+        assert_eq!(ParamLocation::Header.to_string(), "header");
+    }
+
+    // ── RustType helpers ────────────────────────────────────────────────
 
     #[test]
     fn rust_type_is_option() {
@@ -2210,6 +2275,21 @@ components:
     }
 
     #[test]
+    fn rust_type_contains_named_direct() {
+        assert!(RustType::Named("Foo".into()).contains_named("Foo"));
+        assert!(!RustType::Named("Bar".into()).contains_named("Foo"));
+    }
+
+    #[test]
+    fn rust_type_contains_named_nested() {
+        let rt = RustType::Vec(Box::new(RustType::Option(Box::new(RustType::Named(
+            "Pet".into(),
+        )))));
+        assert!(rt.contains_named("Pet"));
+        assert!(!rt.contains_named("Dog"));
+    }
+
+    #[test]
     fn rust_type_display_matches_to_string() {
         let cases = vec![
             RustType::String,
@@ -2225,6 +2305,53 @@ components:
         for rt in &cases {
             assert_eq!(format!("{rt}"), rt.to_string());
         }
+    }
+
+    // ── Operation::request_body_type_name ───────────────────────────────
+
+    #[test]
+    fn operation_request_body_type_name_from_body() {
+        let op = Operation {
+            id: "createPet".into(),
+            method: HttpMethod::Post,
+            path: "/pets".into(),
+            summary: None,
+            description: None,
+            parameters: vec![],
+            request_body: Some(OpRequestBody {
+                required: true,
+                fields: vec![],
+                type_name: Some("CreatePetBody".into()),
+            }),
+            response_type: None,
+            errors: vec![],
+        };
+        assert_eq!(op.request_body_type_name(), "CreatePetBody");
+    }
+
+    #[test]
+    fn operation_request_body_type_name_fallback() {
+        let op = Operation {
+            id: "createPet".into(),
+            method: HttpMethod::Post,
+            path: "/pets".into(),
+            summary: None,
+            description: None,
+            parameters: vec![],
+            request_body: None,
+            response_type: None,
+            errors: vec![],
+        };
+        assert_eq!(op.request_body_type_name(), "CreatePetRequest");
+    }
+
+    // ── From<&OpenApiSpec> ──────────────────────────────────────────────
+
+    #[test]
+    fn from_open_api_spec() {
+        let spec: OpenApiSpec = serde_yaml_ng::from_str(PETSTORE_YAML).unwrap();
+        let api = ApiSpec::from(&spec);
+        assert_eq!(api.name, "Pet Store");
     }
 
     // -- Edge case: empty security schemes section --
