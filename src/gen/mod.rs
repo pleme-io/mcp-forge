@@ -32,10 +32,10 @@ use std::path::Path;
 /// # Errors
 ///
 /// Returns an error if directory creation or file writes fail.
-pub fn generate(spec: &ApiSpec, output_dir: &Path) -> Result<()> {
+pub fn generate(spec: &ApiSpec, output_dir: impl AsRef<Path>) -> Result<()> {
     use std::fs;
 
-    // Create directory structure
+    let output_dir = output_dir.as_ref();
     let src_dir = output_dir.join("src");
     let api_dir = src_dir.join("api");
     let module_dir = output_dir.join("module");
@@ -43,28 +43,30 @@ pub fn generate(spec: &ApiSpec, output_dir: &Path) -> Result<()> {
     fs::create_dir_all(&api_dir)?;
     fs::create_dir_all(&module_dir)?;
 
-    // Generate scaffold files (Cargo.toml, main.rs, error.rs, config.rs, auth.rs, etc.)
-    for (path, content) in scaffold::generate_scaffold(spec) {
-        let file_path = output_dir.join(&path);
-        if let Some(parent) = file_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(&file_path, content)?;
-    }
+    scaffold::generate_scaffold(spec)
+        .into_iter()
+        .try_for_each(|(path, content)| -> Result<()> {
+            let file_path = output_dir.join(&path);
+            if let Some(parent) = file_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&file_path, content)?;
+            Ok(())
+        })?;
 
-    // Generate src/api/types.rs
-    fs::write(api_dir.join("types.rs"), types::generate(spec))?;
+    let generated_files: &[(&str, String)] = &[
+        ("api/types.rs", types::generate(spec)),
+        ("client.rs", client::generate(spec)),
+        ("mcp.rs", mcp::generate(spec)),
+        ("format.rs", format::generate(spec)),
+    ];
 
-    // Generate src/client.rs
-    fs::write(src_dir.join("client.rs"), client::generate(spec))?;
-
-    // Generate src/mcp.rs
-    fs::write(src_dir.join("mcp.rs"), mcp::generate(spec))?;
-
-    // Generate src/format.rs
-    fs::write(src_dir.join("format.rs"), format::generate(spec))?;
-
-    Ok(())
+    generated_files
+        .iter()
+        .try_for_each(|(name, content)| -> Result<()> {
+            fs::write(src_dir.join(name), content)?;
+            Ok(())
+        })
 }
 
 #[cfg(test)]
