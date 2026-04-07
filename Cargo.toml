@@ -33,4 +33,6 @@ strip = true
 tempfile = "3"
 
 [lints.clippy]
-pedantic = "warn"
+pedantic = { level = "warn", priority = -1 }
+# Code generators build strings with format!() + push_str() by design.
+format_push_string = "allow"

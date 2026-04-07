@@ -9,6 +9,7 @@ use heck::{ToSnakeCase, ToUpperCamelCase};
 /// - MCP input structs with `schemars::JsonSchema` for each operation
 /// - An MCP server struct with `#[tool_router]` / `#[tool_handler]`
 /// - Tool methods that delegate to the client and format results
+#[must_use]
 pub fn generate(spec: &ApiSpec) -> String {
     let mut out = String::with_capacity(16384);
 

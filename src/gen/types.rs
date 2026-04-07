@@ -5,6 +5,7 @@ use crate::ir::{ApiSpec, FieldDef, RustType, TypeDef};
 /// Produces serde-compatible structs and enums with proper derive macros,
 /// serde annotations, and `#[serde(flatten)] pub extra: serde_json::Value`
 /// on response types.
+#[must_use]
 pub fn generate(spec: &ApiSpec) -> String {
     let mut out = String::with_capacity(8192);
 
@@ -102,20 +103,13 @@ fn generate_field(out: &mut String, field: &FieldDef) {
         out.push_str(&format!("    /// {desc}\n"));
     }
 
-    // Serde annotations for optional fields
     if !field.required {
-        match &field.rust_type {
-            RustType::Option(_) => {
-                out.push_str(
-                    "    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n",
-                );
-            }
-            RustType::Vec(_) => {
-                out.push_str("    #[serde(default)]\n");
-            }
-            _ => {
-                out.push_str("    #[serde(default)]\n");
-            }
+        if matches!(&field.rust_type, RustType::Option(_)) {
+            out.push_str(
+                "    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n",
+            );
+        } else {
+            out.push_str("    #[serde(default)]\n");
         }
     }
 
@@ -153,13 +147,13 @@ fn rust_type_to_string(rt: &RustType) -> String {
     }
 }
 
-/// Check if name->rust_name is a standard camelCase to snake_case conversion.
+/// Check if `name` -> `rust_name` is a standard `camelCase` to `snake_case` conversion.
 fn is_camel_to_snake(name: &str, rust_name: &str) -> bool {
     use heck::ToSnakeCase;
     name.to_snake_case() == *rust_name
 }
 
-/// Determine if any fields suggest camelCase API naming.
+/// Determine if any fields suggest `camelCase` API naming.
 fn uses_camel_case(typedef: &TypeDef) -> bool {
     typedef.fields.iter().any(|f| {
         // If the original name contains uppercase (camelCase) but the rust_name is snake_case
@@ -176,7 +170,7 @@ fn is_response_type(rust_name: &str, spec: &ApiSpec) -> bool {
     })
 }
 
-/// Check if a RustType references a specific named type.
+/// Check if a `RustType` references a specific named type.
 fn rust_type_contains_named(rt: &RustType, name: &str) -> bool {
     match rt {
         RustType::Named(n) => n == name,
@@ -185,7 +179,7 @@ fn rust_type_contains_named(rt: &RustType, name: &str) -> bool {
     }
 }
 
-/// Infer the serde rename_all strategy for enum variants.
+/// Infer the serde `rename_all` strategy for enum variants.
 fn infer_enum_rename(typedef: &TypeDef) -> Option<String> {
     if typedef.enum_variants.is_empty() {
         return None;

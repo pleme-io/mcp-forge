@@ -16,6 +16,7 @@ use heck::{ToSnakeCase, ToUpperCamelCase};
 /// - `flake.nix` -- substrate pattern with `crateOverrides` for rmcp
 /// - `module/default.nix` -- home-manager module with `mkMcpOptions`
 /// - `.gitignore`
+#[must_use]
 pub fn generate_scaffold(spec: &ApiSpec) -> Vec<(String, String)> {
     let mut files = Vec::with_capacity(10);
 
@@ -385,6 +386,7 @@ fn generate_flake_nix(spec: &ApiSpec) -> String {
     )
 }
 
+#[allow(clippy::too_many_lines)]
 fn generate_module_nix(spec: &ApiSpec) -> String {
     let app_name = spec.name.to_snake_case();
     let app_upper = app_name.to_uppercase();

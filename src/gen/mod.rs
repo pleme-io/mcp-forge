@@ -28,6 +28,10 @@ use std::path::Path;
 ///     mod.rs
 ///     types.rs
 /// ```
+///
+/// # Errors
+///
+/// Returns an error if directory creation or file writes fail.
 pub fn generate(spec: &ApiSpec, output_dir: &Path) -> Result<()> {
     use std::fs;
 

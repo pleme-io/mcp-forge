@@ -15,9 +15,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Generate a complete Rust MCP server project from an OpenAPI spec
+    /// Generate a complete Rust MCP server project from an `OpenAPI` spec
     Generate {
-        /// Path to the OpenAPI 3.0.3 YAML or JSON spec file
+        /// Path to the `OpenAPI` 3.0.3 YAML or JSON spec file
         #[arg(long, short)]
         spec: PathBuf,
 
@@ -25,14 +25,14 @@ enum Command {
         #[arg(long, short, default_value = ".")]
         output: PathBuf,
 
-        /// Project name override (defaults to spec info.title, snake_cased)
+        /// Project name override (defaults to spec `info.title`, snake-cased)
         #[arg(long)]
         name: Option<String>,
     },
 
     /// Parse and display the intermediate representation (for debugging)
     Inspect {
-        /// Path to the OpenAPI spec file
+        /// Path to the `OpenAPI` spec file
         #[arg(long, short)]
         spec: PathBuf,
     },
@@ -60,8 +60,7 @@ async fn main() -> Result<()> {
                 serde_yaml_ng::from_str(&content)?
             };
 
-            let mut api = ir::ApiSpec::from_openapi(&openapi)
-                .context("failed to convert OpenAPI spec to IR")?;
+            let mut api = ir::ApiSpec::from_openapi(&openapi);
 
             if let Some(n) = name {
                 api.name = n;
@@ -88,8 +87,7 @@ async fn main() -> Result<()> {
                 serde_yaml_ng::from_str(&content)?
             };
 
-            let api = ir::ApiSpec::from_openapi(&openapi)
-                .context("failed to convert OpenAPI spec to IR")?;
+            let api = ir::ApiSpec::from_openapi(&openapi);
 
             println!("Name: {}", api.name);
             println!("Version: {}", api.version);

@@ -4,7 +4,8 @@ use heck::ToSnakeCase;
 /// Generate the `src/format.rs` file from the API spec.
 ///
 /// Produces a `format_*` function for each operation's response type.
-/// Uses `writeln!` pattern for text output and handles Option fields with if-let.
+/// Uses `writeln!` pattern for text output and handles `Option` fields with if-let.
+#[must_use]
 pub fn generate(spec: &ApiSpec) -> String {
     let mut out = String::with_capacity(8192);
 
@@ -35,10 +36,8 @@ pub fn generate(spec: &ApiSpec) -> String {
             continue;
         }
 
-        // Skip operations with no response type
-        let response_type = match &op.response_type {
-            Some(rt) => rt,
-            None => continue,
+        let Some(response_type) = &op.response_type else {
+            continue;
         };
 
         let response_type_str = rust_type_to_string(response_type);
@@ -147,19 +146,18 @@ fn generate_list_format(
     }
 
     // Check for pagination cursor field
-    let cursor_field = typedef
+    if let Some(cursor_field) = typedef
         .fields
         .iter()
-        .find(|f| f.rust_name.contains("cursor") || f.rust_name.contains("next"));
-    if let Some(cursor_field) = cursor_field {
-        if is_option_type(&cursor_field.rust_type) {
-            out.push_str(&format!(
-                "    if let Some(ref cursor) = data.{} {{\n\
-                 \x20       let _ = writeln!(out, \"\\n[next page: cursor={{}}\", cursor);\n\
-                 \x20   }}\n",
-                cursor_field.rust_name
-            ));
-        }
+        .find(|f| f.rust_name.contains("cursor") || f.rust_name.contains("next"))
+        && is_option_type(&cursor_field.rust_type)
+    {
+        out.push_str(&format!(
+            "    if let Some(ref cursor) = data.{} {{\n\
+             \x20       let _ = writeln!(out, \"\\n[next page: cursor={{}}\", cursor);\n\
+             \x20   }}\n",
+            cursor_field.rust_name
+        ));
     }
 
     out.push_str("    out\n");
@@ -272,7 +270,7 @@ fn rust_type_to_string(rt: &RustType) -> String {
     }
 }
 
-/// Build a label from a field name: "field_name" -> "Field Name"
+/// Build a label from a field name: `field_name` → `Field Name`.
 fn field_label(name: &str) -> String {
     name.split('_')
         .map(|word| {

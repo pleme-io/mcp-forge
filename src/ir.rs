@@ -2,7 +2,6 @@
 
 use std::collections::BTreeMap;
 
-use anyhow::{Context, Result};
 use heck::{ToSnakeCase, ToUpperCamelCase};
 
 use crate::spec::{self, OpenApiSpec, Schema};
@@ -162,7 +161,9 @@ impl std::fmt::Display for RustType {
 // ── Conversion: OpenApiSpec → ApiSpec ──────────────────────────────────────
 
 impl ApiSpec {
-    pub fn from_openapi(spec: &OpenApiSpec) -> Result<Self> {
+    /// Convert a parsed `OpenAPI` spec into the intermediate representation.
+    #[must_use]
+    pub fn from_openapi(spec: &OpenApiSpec) -> Self {
         let mut converter = Converter::new(spec);
         converter.run()
     }
@@ -185,20 +186,13 @@ impl<'a> Converter<'a> {
         }
     }
 
-    fn run(&mut self) -> Result<ApiSpec> {
-        // 1. Emit all component schemas as TypeDefs first.
+    fn run(&mut self) -> ApiSpec {
         self.convert_component_schemas();
-
-        // 2. Convert operations.
-        let operations = self.convert_operations()?;
-
-        // 3. Detect auth.
+        let operations = self.convert_operations();
         let auth = self.detect_auth();
-
-        // 4. Base URL from first server.
         let base_url = self.spec.servers.first().map(|s| s.url.clone());
 
-        Ok(ApiSpec {
+        ApiSpec {
             name: self.spec.info.title.clone(),
             description: self.spec.info.description.clone(),
             version: self.spec.info.version.clone(),
@@ -206,15 +200,14 @@ impl<'a> Converter<'a> {
             auth,
             operations,
             types: self.types.clone(),
-        })
+        }
     }
 
     // ── Auth detection ─────────────────────────────────────────────────
 
     fn detect_auth(&self) -> AuthMethod {
-        let components = match &self.spec.components {
-            Some(c) => c,
-            None => return AuthMethod::None,
+        let Some(components) = &self.spec.components else {
+            return AuthMethod::None;
         };
 
         for scheme in components.security_schemes.values() {
@@ -229,10 +222,10 @@ impl<'a> Converter<'a> {
                     }
                 }
                 "apiKey" => {
-                    if scheme.location.as_deref() == Some("header") {
-                        if let Some(name) = &scheme.name {
-                            return AuthMethod::ApiKeyHeader(name.clone());
-                        }
+                    if scheme.location.as_deref() == Some("header")
+                        && let Some(name) = &scheme.name
+                    {
+                        return AuthMethod::ApiKeyHeader(name.clone());
                     }
                 }
                 _ => {}
@@ -314,8 +307,10 @@ impl<'a> Converter<'a> {
         if schema.all_of.is_empty() {
             return schema.clone();
         }
-        let mut merged = Schema::default();
-        merged.schema_type = Some("object".into());
+        let mut merged = Schema {
+            schema_type: Some("object".into()),
+            ..Schema::default()
+        };
 
         for sub in &schema.all_of {
             let resolved = if let Some(ref_path) = &sub.ref_path {
@@ -349,7 +344,7 @@ impl<'a> Converter<'a> {
         merged
     }
 
-    /// Convert a schema's properties into `Vec<FieldDef>`.
+    /// Convert a schema's properties into a vec of `FieldDef`.
     fn schema_to_fields(&mut self, schema: &Schema) -> Vec<FieldDef> {
         let mut fields = Vec::new();
         for (name, prop) in &schema.properties {
@@ -375,7 +370,7 @@ impl<'a> Converter<'a> {
 
     // ── Schema → RustType ──────────────────────────────────────────────
 
-    /// Convert an OpenAPI Schema to a `RustType`, optionally creating named
+    /// Convert an `OpenAPI` Schema to a `RustType`, optionally creating named
     /// sub-types for inline objects.
     fn schema_to_rust_type(
         &mut self,
@@ -438,7 +433,6 @@ impl<'a> Converter<'a> {
         match schema.schema_type.as_deref() {
             Some("string") => RustType::String,
             Some("integer") => match schema.format.as_deref() {
-                Some("int64") => RustType::I64,
                 Some("uint64") => RustType::U64,
                 _ => RustType::I64,
             },
@@ -448,19 +442,15 @@ impl<'a> Converter<'a> {
                 let inner = schema
                     .items
                     .as_ref()
-                    .map(|s| self.schema_to_rust_type(s, context_name))
-                    .unwrap_or(RustType::Value);
+                    .map_or(RustType::Value, |s| {
+                        self.schema_to_rust_type(s, context_name)
+                    });
                 RustType::Vec(Box::new(inner))
             }
             Some("object") => {
                 if schema.properties.is_empty() {
-                    // Untyped object — use Value.
-                    if schema.additional_properties.is_some() {
-                        return RustType::Value;
-                    }
                     return RustType::Value;
                 }
-                // Inline object with properties — create a named sub-type.
                 if let Some(ctx) = context_name {
                     let type_name = ctx.to_upper_camel_case();
                     self.ensure_type(ctx, schema);
@@ -469,13 +459,12 @@ impl<'a> Converter<'a> {
                 RustType::Value
             }
             _ => {
-                // No explicit type. Check for properties (implicit object).
-                if !schema.properties.is_empty() {
-                    if let Some(ctx) = context_name {
-                        let type_name = ctx.to_upper_camel_case();
-                        self.ensure_type(ctx, schema);
-                        return RustType::Named(type_name);
-                    }
+                if !schema.properties.is_empty()
+                    && let Some(ctx) = context_name
+                {
+                    let type_name = ctx.to_upper_camel_case();
+                    self.ensure_type(ctx, schema);
+                    return RustType::Named(type_name);
                 }
                 RustType::Value
             }
@@ -484,7 +473,7 @@ impl<'a> Converter<'a> {
 
     // ── Operations ─────────────────────────────────────────────────────
 
-    fn convert_operations(&mut self) -> Result<Vec<Operation>> {
+    fn convert_operations(&mut self) -> Vec<Operation> {
         let mut ops = Vec::new();
 
         for (path, item) in &self.spec.paths {
@@ -500,20 +489,12 @@ impl<'a> Converter<'a> {
 
             for (method, maybe_op) in &methods {
                 if let Some(op) = maybe_op {
-                    let converted = self
-                        .convert_operation(*method, path, op, path_params)
-                        .with_context(|| {
-                            format!(
-                                "converting {method} {path} (operationId: {:?})",
-                                op.operation_id
-                            )
-                        })?;
-                    ops.push(converted);
+                    ops.push(self.convert_operation(*method, path, op, path_params));
                 }
             }
         }
 
-        Ok(ops)
+        ops
     }
 
     fn convert_operation(
@@ -522,7 +503,7 @@ impl<'a> Converter<'a> {
         path: &str,
         op: &spec::Operation,
         path_level_params: &[spec::Parameter],
-    ) -> Result<Operation> {
+    ) -> Operation {
         let id = op
             .operation_id
             .clone()
@@ -531,9 +512,6 @@ impl<'a> Converter<'a> {
             })
             .to_snake_case();
 
-        // Merge path-level and operation-level parameters, operation wins.
-        // We clone parameters to avoid holding borrows on `self` through
-        // `resolve_parameter` while we later call `convert_parameter`.
         let mut param_map: BTreeMap<std::string::String, spec::Parameter> = BTreeMap::new();
         for p in path_level_params {
             let resolved = self.resolve_parameter(p).cloned();
@@ -552,13 +530,9 @@ impl<'a> Converter<'a> {
             .map(|p| self.convert_parameter(p))
             .collect();
 
-        // Request body.
-        let request_body = self.convert_request_body(op.request_body.as_ref(), &id)?;
-
-        // Response type — take the first 2xx response with a schema.
+        let request_body = self.convert_request_body(op.request_body.as_ref(), &id);
         let response_type = self.extract_response_type(&op.responses);
 
-        // Error responses (non-2xx).
         let errors: Vec<ErrorResponse> = op
             .responses
             .iter()
@@ -569,7 +543,7 @@ impl<'a> Converter<'a> {
             })
             .collect();
 
-        Ok(Operation {
+        Operation {
             id,
             method,
             path: path.to_string(),
@@ -579,7 +553,7 @@ impl<'a> Converter<'a> {
             request_body,
             response_type,
             errors,
-        })
+        }
     }
 
     fn resolve_parameter<'b>(&'b self, param: &'b spec::Parameter) -> Option<&'b spec::Parameter> {
@@ -599,8 +573,9 @@ impl<'a> Converter<'a> {
         let mut rust_type = param
             .schema
             .as_ref()
-            .map(|s| self.schema_to_rust_type(s, Some(&param.name)))
-            .unwrap_or(RustType::String);
+            .map_or(RustType::String, |s| {
+                self.schema_to_rust_type(s, Some(&param.name))
+            });
 
         // Path params are always required.
         let required = param.required || location == ParamLocation::Path;
@@ -623,35 +598,23 @@ impl<'a> Converter<'a> {
         &mut self,
         body: Option<&spec::RequestBody>,
         operation_id: &str,
-    ) -> Result<Option<OpRequestBody>> {
-        let body = match body {
-            Some(b) => {
-                // Resolve $ref if present.
-                if let Some(ref_path) = &b.ref_path {
-                    match self.spec.resolve_request_body_ref(ref_path) {
-                        Some(resolved) => resolved.clone(),
-                        None => return Ok(None),
-                    }
-                } else {
-                    b.clone()
-                }
-            }
-            None => return Ok(None),
+    ) -> Option<OpRequestBody> {
+        let b = body?;
+
+        let body = if let Some(ref_path) = &b.ref_path {
+            self.spec
+                .resolve_request_body_ref(ref_path)
+                .cloned()?
+        } else {
+            b.clone()
         };
 
-        // Find a JSON media type.
         let schema = body
             .content
             .get("application/json")
             .or_else(|| body.content.get("*/*"))
-            .and_then(|mt| mt.schema.as_ref());
+            .and_then(|mt| mt.schema.as_ref())?;
 
-        let schema = match schema {
-            Some(s) => s,
-            None => return Ok(None),
-        };
-
-        // Resolve the schema if it's a $ref.
         let (resolved_schema, type_name) = if let Some(ref_path) = &schema.ref_path {
             let name = spec::ref_name(ref_path);
             let resolved = self
@@ -667,23 +630,21 @@ impl<'a> Converter<'a> {
 
         let fields = self.schema_to_fields(&self.merge_all_of(&resolved_schema));
 
-        // If the body is an inline object with no name, create a type for it.
         let type_name = type_name.or_else(|| {
-            if !fields.is_empty() {
-                let name = format!("{operation_id}_body").to_upper_camel_case();
-                let schema_copy = resolved_schema.clone();
-                self.ensure_type(&name, &schema_copy);
-                Some(name)
-            } else {
-                None
+            if fields.is_empty() {
+                return None;
             }
+            let name = format!("{operation_id}_body").to_upper_camel_case();
+            let schema_copy = resolved_schema.clone();
+            self.ensure_type(&name, &schema_copy);
+            Some(name)
         });
 
-        Ok(Some(OpRequestBody {
+        Some(OpRequestBody {
             required: body.required,
             fields,
             type_name,
-        }))
+        })
     }
 
     fn extract_response_type(
@@ -728,7 +689,7 @@ mod tests {
     /// Shared helper: parse a YAML spec and convert to IR.
     fn parse_ir(yaml: &str) -> ApiSpec {
         let spec: OpenApiSpec = serde_yaml_ng::from_str(yaml).unwrap();
-        ApiSpec::from_openapi(&spec).unwrap()
+        ApiSpec::from_openapi(&spec)
     }
 
     const PETSTORE_YAML: &str = r##"

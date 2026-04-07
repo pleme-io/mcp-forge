@@ -4,9 +4,10 @@ use heck::{ToSnakeCase, ToUpperCamelCase};
 /// Generate the `src/client.rs` file from the API spec.
 ///
 /// Produces a typed HTTP client struct with:
-/// - Auth based on `spec.auth` (Bearer, Basic, ApiKeyHeader, None)
+/// - Auth based on `spec.auth` (Bearer, Basic, `ApiKeyHeader`, None)
 /// - Typed async methods for each operation
 /// - Path parameter interpolation and query parameter URL-encoding
+#[must_use]
 pub fn generate(spec: &ApiSpec) -> String {
     let mut out = String::with_capacity(16384);
 
@@ -131,6 +132,7 @@ fn auth_call(auth: &AuthMethod) -> String {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn generate_http_helpers(out: &mut String, auth: &AuthMethod, error_name: &str) {
     let auth_call = auth_call(auth);
 
@@ -345,6 +347,7 @@ fn generate_http_helpers(out: &mut String, auth: &AuthMethod, error_name: &str) 
     ));
 }
 
+#[allow(clippy::too_many_lines)]
 fn generate_operation_method(out: &mut String, op: &Operation) {
     let method_name = op.id.to_snake_case();
 
@@ -363,15 +366,10 @@ fn generate_operation_method(out: &mut String, op: &Operation) {
     let has_body = op.request_body.is_some();
     let has_response = op.response_type.is_some();
 
-    // Determine response type string
-    let response_type = if has_response {
-        op.response_type
-            .as_ref()
-            .map(rust_type_to_string)
-            .unwrap_or_else(|| "serde_json::Value".into())
-    } else {
-        "()".into()
-    };
+    let response_type = op
+        .response_type
+        .as_ref()
+        .map_or_else(|| "()".into(), rust_type_to_string);
 
     // Doc comment
     out.push_str(&format!("    /// {} {}\n", op.method, op.path));
@@ -404,9 +402,9 @@ fn generate_operation_method(out: &mut String, op: &Operation) {
 
     // Select the appropriate internal method name
     let method_fn = if has_response {
-        http_method_fn(&op.method, has_body)
+        http_method_fn(op.method, has_body)
     } else {
-        http_method_fn_empty(&op.method, has_body)
+        http_method_fn_empty(op.method, has_body)
     };
 
     // Build path string with interpolation
@@ -466,28 +464,21 @@ fn generate_operation_method(out: &mut String, op: &Operation) {
 
             if has_body {
                 out.push_str(&format!(
-                    "        self.{}(&path, req).await\n",
-                    method_fn
+                    "        self.{method_fn}(&path, req).await\n"
                 ));
             } else {
                 out.push_str(&format!(
-                    "        self.{}(&path).await\n",
-                    method_fn
+                    "        self.{method_fn}(&path).await\n"
                 ));
             }
+        } else if has_body {
+            out.push_str(&format!(
+                "        self.{method_fn}(&format!(\"{path_template}\"), req).await\n"
+            ));
         } else {
-            // Path params only, no query params
-            if has_body {
-                out.push_str(&format!(
-                    "        self.{}(&format!(\"{path_template}\"), req).await\n",
-                    method_fn
-                ));
-            } else {
-                out.push_str(&format!(
-                    "        self.{}(&format!(\"{path_template}\")).await\n",
-                    method_fn
-                ));
-            }
+            out.push_str(&format!(
+                "        self.{method_fn}(&format!(\"{path_template}\")).await\n"
+            ));
         }
     }
 
@@ -495,7 +486,7 @@ fn generate_operation_method(out: &mut String, op: &Operation) {
 }
 
 /// Select the private helper method name for operations that return a response body.
-fn http_method_fn(method: &HttpMethod, has_body: bool) -> &'static str {
+fn http_method_fn(method: HttpMethod, has_body: bool) -> &'static str {
     match method {
         HttpMethod::Get => "get",
         HttpMethod::Post => {
@@ -512,7 +503,7 @@ fn http_method_fn(method: &HttpMethod, has_body: bool) -> &'static str {
 }
 
 /// Select the private helper method name for operations with no response body (e.g. 204).
-fn http_method_fn_empty(method: &HttpMethod, has_body: bool) -> &'static str {
+fn http_method_fn_empty(method: HttpMethod, has_body: bool) -> &'static str {
     match method {
         HttpMethod::Get => "get_empty",
         HttpMethod::Post => {
@@ -562,14 +553,11 @@ fn is_option_type(rt: &RustType) -> bool {
 }
 
 fn request_body_type_name(op: &Operation) -> String {
-    // If the request body has a named type, use it
-    if let Some(ref body) = op.request_body {
-        if let Some(ref name) = body.type_name {
-            return name.clone();
-        }
+    if let Some(ref body) = op.request_body
+        && let Some(ref name) = body.type_name
+    {
+        return name.clone();
     }
-    // Fallback: operation id in PascalCase + "Request"
-    use heck::ToUpperCamelCase;
     format!("{}Request", op.id.to_upper_camel_case())
 }
 
@@ -865,32 +853,32 @@ mod tests {
 
     #[test]
     fn http_method_fn_get() {
-        assert_eq!(http_method_fn(&HttpMethod::Get, false), "get");
+        assert_eq!(http_method_fn(HttpMethod::Get, false), "get");
     }
 
     #[test]
     fn http_method_fn_post_with_body() {
-        assert_eq!(http_method_fn(&HttpMethod::Post, true), "post");
+        assert_eq!(http_method_fn(HttpMethod::Post, true), "post");
     }
 
     #[test]
     fn http_method_fn_post_without_body() {
-        assert_eq!(http_method_fn(&HttpMethod::Post, false), "post_empty");
+        assert_eq!(http_method_fn(HttpMethod::Post, false), "post_empty");
     }
 
     #[test]
     fn http_method_fn_put() {
-        assert_eq!(http_method_fn(&HttpMethod::Put, true), "put");
+        assert_eq!(http_method_fn(HttpMethod::Put, true), "put");
     }
 
     #[test]
     fn http_method_fn_patch() {
-        assert_eq!(http_method_fn(&HttpMethod::Patch, true), "patch");
+        assert_eq!(http_method_fn(HttpMethod::Patch, true), "patch");
     }
 
     #[test]
     fn http_method_fn_delete() {
-        assert_eq!(http_method_fn(&HttpMethod::Delete, false), "delete");
+        assert_eq!(http_method_fn(HttpMethod::Delete, false), "delete");
     }
 
     #[test]
@@ -1205,13 +1193,13 @@ mod tests {
 
     #[test]
     fn http_method_fn_empty_get() {
-        assert_eq!(http_method_fn_empty(&HttpMethod::Get, false), "get_empty");
+        assert_eq!(http_method_fn_empty(HttpMethod::Get, false), "get_empty");
     }
 
     #[test]
     fn http_method_fn_empty_post_with_body() {
         assert_eq!(
-            http_method_fn_empty(&HttpMethod::Post, true),
+            http_method_fn_empty(HttpMethod::Post, true),
             "post_no_response"
         );
     }
@@ -1219,7 +1207,7 @@ mod tests {
     #[test]
     fn http_method_fn_empty_post_without_body() {
         assert_eq!(
-            http_method_fn_empty(&HttpMethod::Post, false),
+            http_method_fn_empty(HttpMethod::Post, false),
             "post_empty_no_response"
         );
     }
@@ -1227,7 +1215,7 @@ mod tests {
     #[test]
     fn http_method_fn_empty_put() {
         assert_eq!(
-            http_method_fn_empty(&HttpMethod::Put, true),
+            http_method_fn_empty(HttpMethod::Put, true),
             "put_no_response"
         );
     }
@@ -1235,7 +1223,7 @@ mod tests {
     #[test]
     fn http_method_fn_empty_patch() {
         assert_eq!(
-            http_method_fn_empty(&HttpMethod::Patch, true),
+            http_method_fn_empty(HttpMethod::Patch, true),
             "patch_no_response"
         );
     }
@@ -1243,7 +1231,7 @@ mod tests {
     #[test]
     fn http_method_fn_empty_delete() {
         assert_eq!(
-            http_method_fn_empty(&HttpMethod::Delete, false),
+            http_method_fn_empty(HttpMethod::Delete, false),
             "delete_empty"
         );
     }
