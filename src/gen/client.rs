@@ -1247,4 +1247,340 @@ mod tests {
             "delete_empty"
         );
     }
+
+    // -- Combined path + query parameters --
+
+    #[test]
+    fn generates_path_and_query_params_combined() {
+        let op = Operation {
+            id: "get_user_repos".into(),
+            method: HttpMethod::Get,
+            path: "/users/{userId}/repos".into(),
+            summary: None,
+            description: None,
+            parameters: vec![
+                OpParameter {
+                    name: "userId".into(),
+                    rust_name: "user_id".into(),
+                    location: ParamLocation::Path,
+                    required: true,
+                    rust_type: RustType::String,
+                    description: None,
+                },
+                OpParameter {
+                    name: "page".into(),
+                    rust_name: "page".into(),
+                    location: ParamLocation::Query,
+                    required: false,
+                    rust_type: RustType::Option(Box::new(RustType::I64)),
+                    description: None,
+                },
+            ],
+            request_body: None,
+            response_type: Some(RustType::Value),
+            errors: vec![],
+        };
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("user_id: &str,"));
+        assert!(code.contains("page: Option<i64>,"));
+        assert!(code.contains("{user_id}"));
+        assert!(code.contains("has_query"));
+    }
+
+    // -- PATCH method generation --
+
+    #[test]
+    fn generates_patch_method_with_body() {
+        let op = Operation {
+            id: "update_item".into(),
+            method: HttpMethod::Patch,
+            path: "/items/{id}".into(),
+            summary: Some("Partially update item".into()),
+            description: None,
+            parameters: vec![OpParameter {
+                name: "id".into(),
+                rust_name: "id".into(),
+                location: ParamLocation::Path,
+                required: true,
+                rust_type: RustType::String,
+                description: None,
+            }],
+            request_body: Some(OpRequestBody {
+                required: true,
+                fields: vec![FieldDef {
+                    name: "name".into(),
+                    rust_name: "name".into(),
+                    rust_type: RustType::String,
+                    required: false,
+                    description: None,
+                    default_value: None,
+                }],
+                type_name: Some("PatchItemRequest".into()),
+            }),
+            response_type: Some(RustType::Named("Item".into())),
+            errors: vec![],
+        };
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("pub async fn update_item("));
+        assert!(code.contains("self.patch("));
+        assert!(code.contains("req: &PatchItemRequest,"));
+    }
+
+    // -- Multiple path parameters --
+
+    #[test]
+    fn generates_multiple_path_params() {
+        let op = Operation {
+            id: "get_comment".into(),
+            method: HttpMethod::Get,
+            path: "/posts/{postId}/comments/{commentId}".into(),
+            summary: None,
+            description: None,
+            parameters: vec![
+                OpParameter {
+                    name: "postId".into(),
+                    rust_name: "post_id".into(),
+                    location: ParamLocation::Path,
+                    required: true,
+                    rust_type: RustType::String,
+                    description: None,
+                },
+                OpParameter {
+                    name: "commentId".into(),
+                    rust_name: "comment_id".into(),
+                    location: ParamLocation::Path,
+                    required: true,
+                    rust_type: RustType::String,
+                    description: None,
+                },
+            ],
+            request_body: None,
+            response_type: Some(RustType::Named("Comment".into())),
+            errors: vec![],
+        };
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("post_id: &str,"));
+        assert!(code.contains("comment_id: &str,"));
+        assert!(code.contains("{post_id}"));
+        assert!(code.contains("{comment_id}"));
+    }
+
+    // -- POST without body and no response --
+
+    #[test]
+    fn post_no_body_no_response() {
+        let op = Operation {
+            id: "trigger_build".into(),
+            method: HttpMethod::Post,
+            path: "/build".into(),
+            summary: None,
+            description: None,
+            parameters: vec![],
+            request_body: None,
+            response_type: None,
+            errors: vec![],
+        };
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("-> Result<()>"));
+        assert!(code.contains("post_empty_no_response"));
+    }
+
+    // -- PATCH no response uses patch_no_response --
+
+    #[test]
+    fn patch_no_response() {
+        let op = Operation {
+            id: "ack_event".into(),
+            method: HttpMethod::Patch,
+            path: "/events/{id}/ack".into(),
+            summary: None,
+            description: None,
+            parameters: vec![OpParameter {
+                name: "id".into(),
+                rust_name: "id".into(),
+                location: ParamLocation::Path,
+                required: true,
+                rust_type: RustType::String,
+                description: None,
+            }],
+            request_body: Some(OpRequestBody {
+                required: true,
+                fields: vec![],
+                type_name: Some("AckRequest".into()),
+            }),
+            response_type: None,
+            errors: vec![],
+        };
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("-> Result<()>"));
+        assert!(code.contains("self.patch_no_response("));
+    }
+
+    // -- POST with body but no response --
+
+    #[test]
+    fn post_with_body_no_response() {
+        let op = Operation {
+            id: "send_notification".into(),
+            method: HttpMethod::Post,
+            path: "/notify".into(),
+            summary: None,
+            description: None,
+            parameters: vec![],
+            request_body: Some(OpRequestBody {
+                required: true,
+                fields: vec![FieldDef {
+                    name: "message".into(),
+                    rust_name: "message".into(),
+                    rust_type: RustType::String,
+                    required: true,
+                    description: None,
+                    default_value: None,
+                }],
+                type_name: Some("NotifyRequest".into()),
+            }),
+            response_type: None,
+            errors: vec![],
+        };
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("self.post_no_response("));
+        assert!(code.contains("req: &NotifyRequest,"));
+    }
+
+    // -- is_option_type helper --
+
+    #[test]
+    fn is_option_type_tests() {
+        assert!(is_option_type(&RustType::Option(Box::new(RustType::String))));
+        assert!(!is_option_type(&RustType::String));
+        assert!(!is_option_type(&RustType::Vec(Box::new(RustType::I64))));
+    }
+
+    // -- request_body_type_name with no body --
+
+    #[test]
+    fn request_body_type_name_no_body_fallback() {
+        let op = Operation {
+            id: "do_something".into(),
+            method: HttpMethod::Post,
+            path: "/something".into(),
+            summary: None,
+            description: None,
+            parameters: vec![],
+            request_body: None,
+            response_type: None,
+            errors: vec![],
+        };
+        assert_eq!(request_body_type_name(&op), "DoSomethingRequest");
+    }
+
+    // -- param_type_string for required Option (unwraps) --
+
+    #[test]
+    fn param_type_string_required_option_unwraps() {
+        let param = OpParameter {
+            name: "tag".into(),
+            rust_name: "tag".into(),
+            location: ParamLocation::Query,
+            required: true,
+            rust_type: RustType::Option(Box::new(RustType::String)),
+            description: None,
+        };
+        assert_eq!(param_type_string(&param), "String");
+    }
+
+    // -- param_type_string for not-required non-Option wraps in Option --
+
+    #[test]
+    fn param_type_string_not_required_non_option_wraps() {
+        let param = OpParameter {
+            name: "limit".into(),
+            rust_name: "limit".into(),
+            location: ParamLocation::Query,
+            required: false,
+            rust_type: RustType::I64,
+            description: None,
+        };
+        assert_eq!(param_type_string(&param), "Option<i64>");
+    }
+
+    // -- User agent contains version --
+
+    #[test]
+    fn user_agent_includes_version() {
+        let spec = make_spec("TestApi", AuthMethod::None, vec![]);
+        let code = generate(&spec);
+        assert!(code.contains("pleme-io/test_api 1.0.0"));
+    }
+
+    // -- GET with no response body --
+
+    #[test]
+    fn get_no_response_uses_get_empty() {
+        let op = Operation {
+            id: "ping".into(),
+            method: HttpMethod::Get,
+            path: "/ping".into(),
+            summary: None,
+            description: None,
+            parameters: vec![],
+            request_body: None,
+            response_type: None,
+            errors: vec![],
+        };
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("self.get_empty("));
+        assert!(code.contains("-> Result<()>"));
+    }
+
+    // -- Basic auth in generated helpers --
+
+    #[test]
+    fn http_helpers_include_basic_auth() {
+        let spec = make_spec("TestApi", AuthMethod::Basic, vec![]);
+        let code = generate(&spec);
+        assert!(code.contains(".basic_auth(&self.api_key, Option::<&str>::None)"));
+    }
+
+    // -- No auth -- no auth call in helpers --
+
+    #[test]
+    fn http_helpers_no_auth_has_no_auth_call() {
+        let spec = make_spec("TestApi", AuthMethod::None, vec![]);
+        let code = generate(&spec);
+        assert!(!code.contains("bearer_auth"));
+        assert!(!code.contains("basic_auth"));
+        assert!(!code.contains(".header(\""));
+    }
+
+    // -- Static path with body (no path/query params) --
+
+    #[test]
+    fn static_path_with_body() {
+        let op = Operation {
+            id: "create_widget".into(),
+            method: HttpMethod::Post,
+            path: "/widgets".into(),
+            summary: None,
+            description: None,
+            parameters: vec![],
+            request_body: Some(OpRequestBody {
+                required: true,
+                fields: vec![],
+                type_name: Some("Widget".into()),
+            }),
+            response_type: Some(RustType::Named("Widget".into())),
+            errors: vec![],
+        };
+        let spec = make_spec("TestApi", AuthMethod::None, vec![op]);
+        let code = generate(&spec);
+        assert!(code.contains("self.post(\"/widgets\", req).await"));
+    }
 }
