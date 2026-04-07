@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub mod r#gen;
 pub mod ir;
@@ -38,6 +38,19 @@ enum Command {
     },
 }
 
+fn load_spec(path: &Path) -> Result<ir::ApiSpec> {
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read spec: {}", path.display()))?;
+
+    let openapi: spec::OpenApiSpec = if path.extension().is_some_and(|e| e == "json") {
+        serde_json::from_str(&content)?
+    } else {
+        serde_yaml_ng::from_str(&content)?
+    };
+
+    Ok(ir::ApiSpec::from_openapi(&openapi))
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -51,16 +64,7 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Command::Generate { spec, output, name } => {
-            let content = std::fs::read_to_string(&spec)
-                .with_context(|| format!("failed to read spec: {}", spec.display()))?;
-
-            let openapi: spec::OpenApiSpec = if spec.extension().is_some_and(|e| e == "json") {
-                serde_json::from_str(&content)?
-            } else {
-                serde_yaml_ng::from_str(&content)?
-            };
-
-            let mut api = ir::ApiSpec::from_openapi(&openapi);
+            let mut api = load_spec(&spec)?;
 
             if let Some(n) = name {
                 api.name = n;
@@ -78,21 +82,12 @@ async fn main() -> Result<()> {
         }
 
         Command::Inspect { spec } => {
-            let content = std::fs::read_to_string(&spec)
-                .with_context(|| format!("failed to read spec: {}", spec.display()))?;
-
-            let openapi: spec::OpenApiSpec = if spec.extension().is_some_and(|e| e == "json") {
-                serde_json::from_str(&content)?
-            } else {
-                serde_yaml_ng::from_str(&content)?
-            };
-
-            let api = ir::ApiSpec::from_openapi(&openapi);
+            let api = load_spec(&spec)?;
 
             println!("Name: {}", api.name);
             println!("Version: {}", api.version);
             println!("Base URL: {}", api.base_url.as_deref().unwrap_or("-"));
-            println!("Auth: {:?}", api.auth);
+            println!("Auth: {}", api.auth);
             println!("\nOperations ({}):", api.operations.len());
             for op in &api.operations {
                 println!(

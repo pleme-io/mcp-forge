@@ -28,6 +28,12 @@ pub enum AuthMethod {
     None,
 }
 
+impl Default for AuthMethod {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
 impl std::fmt::Display for AuthMethod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
