@@ -1,6 +1,7 @@
 pub mod client;
 pub mod format;
 pub mod mcp;
+pub mod rust_ast;
 pub mod scaffold;
 #[cfg(test)]
 mod testutil;
