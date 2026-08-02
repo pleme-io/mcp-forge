@@ -81,7 +81,13 @@ forge-gen generate --spec openapi.yaml --mcp mcp-rust --mcp-name my-api
 
 ## Design Decisions
 
-- **No template engine** — generators use `format!()` and string building (structure is deterministic)
+- **No template engine** — generated Rust is built as a typed AST (`src/gen/rust_ast.rs`) and
+  rendered once, per ★★ TYPED EMISSION. `format!()` of Rust *syntax* is banned; `format!()` of a
+  name, a path or doc-comment prose is fine. `client.rs` and `mcp.rs` are converted;
+  `types.rs`, `scaffold.rs` and `format.rs` are **not yet** — see `pending-format-ban` below.
+- **pending-format-ban: types.rs, scaffold.rs, format.rs** — still concatenate syntax
+  (13 / 17 / 23 `format!` respectively). The `format_push_string = "allow"` in `Cargo.toml`
+  exists only for them and should be deleted once they are converted.
 - **heck for naming** — `ToSnakeCase`, `ToUpperCamelCase` for consistent Rust naming from OpenAPI
 - **Forward compatibility** — generated types include `#[serde(flatten)] extra: serde_json::Value`
 - **Generated code follows kurage patterns** — Bearer auth, dual-mode CLI+MCP, format module

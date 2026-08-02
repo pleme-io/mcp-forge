@@ -36,5 +36,8 @@ tempfile = "3"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
-# Code generators build strings with format!() + push_str() by design.
+# Temporary. client.rs and mcp.rs now emit through the typed AST in
+# src/gen/rust_ast.rs and no longer push_str a format!() result. This allow
+# survives only for types.rs, scaffold.rs and format.rs; delete it when they
+# are converted (pending-format-ban in CLAUDE.md).
 format_push_string = "allow"

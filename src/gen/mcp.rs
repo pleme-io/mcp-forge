@@ -1,7 +1,55 @@
-use crate::ir::{
-    ApiSpec, HttpMethod, OpParameter, Operation, ParamLocation, RustType,
+//! Emit `src/mcp.rs` — the MCP server — from the API spec.
+//!
+//! Every construct is built as a [`rust_ast`] tree and rendered once. Per
+//! ★★ TYPED EMISSION there is no `format!()` of Rust syntax here; the
+//! remaining `format!` calls build *names* and prose, not syntax.
+
+use super::rust_ast::{
+    render_file, Attr, Block, Braces, Doc, Expr, FieldDecl, FieldInit, FnDef, FormatTemplate,
+    Ident, ImplBlock, ImplItem, Item, MatchArm, Param, Params, Path, Stmt, StrLit, StructDef,
+    TypeExpr, UseTree,
 };
+use crate::ir::{ApiSpec, HttpMethod, OpParameter, Operation, ParamLocation, RustType};
 use heck::{ToSnakeCase, ToUpperCamelCase};
+
+// ── Identifier helpers ─────────────────────────────────────────────────────
+
+/// # Panics
+///
+/// Panics if `name` is not a legal Rust identifier. That indicates an IR bug;
+/// there is no sane partial output, so generation stops.
+fn id(name: &str) -> Ident {
+    Ident::new(name)
+        .unwrap_or_else(|e| panic!("code generator built an illegal Rust identifier: {e}"))
+}
+
+/// # Panics
+///
+/// Panics if any segment is not a legal Rust identifier.
+fn path(segments: &[&str]) -> Path {
+    Path::new(segments)
+        .unwrap_or_else(|e| panic!("code generator built an illegal Rust path: {e}"))
+}
+
+fn var(name: &str) -> Expr {
+    Expr::Path(path(&[name]))
+}
+
+fn call(receiver: Expr, method: &str, args: Vec<Expr>) -> Expr {
+    Expr::MethodCall(Box::new(receiver), id(method), args)
+}
+
+/// `input.<name>`
+fn input_field(name: &str) -> Expr {
+    Expr::Field(Box::new(var("input")), id(name))
+}
+
+/// `|e| e.to_string()`
+fn stringify_err() -> Expr {
+    Expr::Closure(id("e"), Box::new(call(var("e"), "to_string", vec![])))
+}
+
+// ── Entry point ────────────────────────────────────────────────────────────
 
 /// Generate the `src/mcp.rs` file from the API spec.
 ///
@@ -11,188 +59,423 @@ use heck::{ToSnakeCase, ToUpperCamelCase};
 /// - Tool methods that delegate to the client and format results
 #[must_use]
 pub fn generate(spec: &ApiSpec) -> String {
-    let mut out = String::with_capacity(16384);
-
     let pascal = spec.name.to_upper_camel_case();
-    let mcp_struct_name = format!("{pascal}Mcp");
+    let mcp_struct = format!("{pascal}Mcp");
     let client_type = format!("{pascal}Client");
     let config_type = format!("{pascal}Config");
 
-    // Imports
-    out.push_str(
-        "use rmcp::{\n\
-         \x20   ServerHandler, ServiceExt,\n\
-         \x20   handler::server::{router::tool::ToolRouter, wrapper::Parameters},\n\
-         \x20   model::{ServerCapabilities, ServerInfo},\n\
-         \x20   schemars, tool, tool_handler, tool_router,\n\
-         \x20   transport::stdio,\n\
-         };\n\
-         use serde::Deserialize;\n\
-         \n\
-         use crate::auth;\n",
-    );
-    out.push_str(&format!("use crate::client::{client_type};\n"));
-    out.push_str(&format!("use crate::config::{config_type};\n"));
-    out.push_str("use crate::format;\n\n");
-
-    // Generate input structs for each operation
-    out.push_str(
-        "// -- MCP tool input types --\n\
-         //\n\
-         // Each struct maps to an operation from the API spec. Field descriptions\n\
-         // are preserved for schemars -> MCP tool schema generation.\n\n",
-    );
+    let mut items = vec![
+        rmcp_import(),
+        Item::Use { path: path(&["serde", "Deserialize"]), leaves: vec![], glob: false },
+        Item::Blank,
+        Item::Use { path: path(&["crate", "auth"]), leaves: vec![], glob: false },
+        Item::Use { path: path(&["crate", "client", &client_type]), leaves: vec![], glob: false },
+        Item::Use { path: path(&["crate", "config", &config_type]), leaves: vec![], glob: false },
+        Item::Use { path: path(&["crate", "format"]), leaves: vec![], glob: false },
+        Item::Blank,
+        Item::Comment("-- MCP tool input types --".into()),
+        Item::Comment(String::new()),
+        Item::Comment("Each struct maps to an operation from the API spec. Field descriptions".into()),
+        Item::Comment("are preserved for schemars -> MCP tool schema generation.".into()),
+        Item::Blank,
+    ];
 
     for op in &spec.operations {
-        generate_input_struct(&mut out, op);
+        if let Some(s) = input_struct(op) {
+            items.push(Item::Struct(s));
+            items.push(Item::Blank);
+        }
     }
 
-    // MCP Server struct
-    out.push_str("// -- MCP Server --\n\n");
+    items.push(Item::Comment("-- MCP Server --".into()));
+    items.push(Item::Blank);
 
-    out.push_str("#[derive(Debug, Clone)]\n");
-    out.push_str(&format!("struct {mcp_struct_name} {{\n"));
-    out.push_str(&format!("    client: {client_type},\n"));
-    out.push_str("    tool_router: ToolRouter<Self>,\n");
-    out.push_str("}\n\n");
+    items.push(Item::Struct(StructDef {
+        doc: Doc::default(),
+        attrs: vec![Attr::List(id("derive"), vec![path(&["Debug"]), path(&["Clone"])])],
+        public: false,
+        name: id(&mcp_struct),
+        fields: vec![
+            FieldDecl {
+                attrs: vec![],
+                public: false,
+                name: id("client"),
+                ty: TypeExpr::Path(path(&[&client_type])),
+            },
+            FieldDecl {
+                attrs: vec![],
+                public: false,
+                name: id("tool_router"),
+                ty: TypeExpr::App(
+                    path(&["ToolRouter"]),
+                    vec![TypeExpr::Path(path(&["Self"]))],
+                ),
+            },
+        ],
+    }));
+    items.push(Item::Blank);
 
-    // tool_router impl
-    out.push_str("#[tool_router]\n");
-    out.push_str(&format!("impl {mcp_struct_name} {{\n"));
-
-    // Constructor
-    out.push_str(
-        "    fn new() -> Result<Self, String> {\n",
-    );
-    out.push_str(&format!(
-        "        let config = {config_type}::load();\n"
-    ));
-    out.push_str(
-        "        let api_key = auth::resolve_api_key(None, &config).map_err(|e| e.to_string())?;\n",
-    );
-    out.push_str(&format!(
-        "        let client =\n\
-         \x20           {client_type}::new(&config.api_url, &api_key).map_err(|e| e.to_string())?;\n\
-         \n"
-    ));
-    out.push_str(
-        "        Ok(Self {\n\
-         \x20           client,\n\
-         \x20           tool_router: Self::tool_router(),\n\
-         \x20       })\n\
-         \x20   }\n\n",
-    );
-
-    // Generate a tool method for each operation
+    let mut members = vec![
+        ImplItem::Fn(constructor(&client_type, &config_type)),
+        ImplItem::Blank,
+    ];
     for op in &spec.operations {
-        generate_tool_method(&mut out, op);
+        members.push(ImplItem::Fn(tool_method(op)));
+        members.push(ImplItem::Blank);
     }
+    items.push(Item::Impl(ImplBlock {
+        attrs: vec![Attr::Word(id("tool_router"))],
+        trait_path: None,
+        self_ty: path(&[&mcp_struct]),
+        items: members,
+    }));
+    items.push(Item::Blank);
 
-    out.push_str("}\n\n");
+    items.push(Item::Impl(ImplBlock {
+        attrs: vec![Attr::Word(id("tool_handler"))],
+        trait_path: Some(path(&["ServerHandler"])),
+        self_ty: path(&[&mcp_struct]),
+        items: vec![ImplItem::Fn(get_info(spec))],
+    }));
+    items.push(Item::Blank);
 
-    // ServerHandler impl
-    out.push_str("#[tool_handler]\n");
-    out.push_str(&format!(
-        "impl ServerHandler for {mcp_struct_name} {{\n"
-    ));
-    out.push_str("    fn get_info(&self) -> ServerInfo {\n");
-    out.push_str("        ServerInfo {\n");
-    out.push_str("            instructions: Some(\n");
+    items.push(Item::Comment("-- Entry point --".into()));
+    items.push(Item::Blank);
+    items.push(Item::Fn(run_fn(&mcp_struct)));
 
-    let default_instructions = format!("{} MCP server", spec.name);
-    let instructions = spec
-        .description
-        .as_deref()
-        .unwrap_or(&default_instructions);
-    out.push_str(&format!(
-        "                \"{}\"\n\
-         \x20                   .into(),\n",
-        escape_string(instructions)
-    ));
-    out.push_str(
-        "            ),\n\
-         \x20           capabilities: ServerCapabilities::builder().enable_tools().build(),\n\
-         \x20           ..Default::default()\n\
-         \x20       }\n\
-         \x20   }\n",
-    );
-    out.push_str("}\n\n");
-
-    // Entry point
-    out.push_str(
-        "// -- Entry point --\n\
-         \n\
-         pub async fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {\n",
-    );
-    out.push_str(&format!(
-        "    let server = {mcp_struct_name}::new()?.serve(stdio()).await?;\n"
-    ));
-    out.push_str(
-        "    server.waiting().await?;\n\
-         \x20   Ok(())\n\
-         }\n",
-    );
-
-    out
+    render_file(&items)
 }
 
-fn generate_input_struct(out: &mut String, op: &Operation) {
-    let struct_name = format!("{}Input", op.id.to_upper_camel_case());
+/// The fixed `rmcp` import block.
+fn rmcp_import() -> Item {
+    let leaf = |segs: &[&str]| UseTree::Leaf(path(segs));
+    Item::UseLines {
+        path: path(&["rmcp"]),
+        lines: vec![
+            vec![leaf(&["ServerHandler"]), leaf(&["ServiceExt"])],
+            vec![UseTree::Group(
+                path(&["handler", "server"]),
+                vec![leaf(&["router", "tool", "ToolRouter"]), leaf(&["wrapper", "Parameters"])],
+            )],
+            vec![UseTree::Group(
+                path(&["model"]),
+                vec![leaf(&["ServerCapabilities"]), leaf(&["ServerInfo"])],
+            )],
+            vec![
+                leaf(&["schemars"]),
+                leaf(&["tool"]),
+                leaf(&["tool_handler"]),
+                leaf(&["tool_router"]),
+            ],
+            vec![leaf(&["transport", "stdio"])],
+        ],
+    }
+}
 
-    // Collect all parameters that should be in the input struct
-    let params: Vec<&OpParameter> = op
-        .parameters
+// ── Input structs ──────────────────────────────────────────────────────────
+
+/// The parameters an operation exposes as MCP tool input.
+fn input_params(op: &Operation) -> Vec<&OpParameter> {
+    op.parameters
         .iter()
         .filter(|p| p.location == ParamLocation::Path || p.location == ParamLocation::Query)
-        .collect();
-
-    let body_fields = op.request_body.as_ref().map(|b| &b.fields);
-
-    // Skip generating empty input structs (will use serde_json::Value)
-    let has_params = !params.is_empty();
-    let has_body_fields = body_fields.is_some_and(|f| !f.is_empty());
-
-    if !has_params && !has_body_fields {
-        return;
-    }
-
-    out.push_str("#[derive(Debug, Deserialize, schemars::JsonSchema)]\n");
-    out.push_str(&format!("struct {struct_name} {{\n"));
-
-    // Path/query parameters
-    for param in &params {
-        if let Some(ref desc) = param.description {
-            out.push_str(&format!(
-                "    #[schemars(description = \"{}\")]\n",
-                escape_string(desc)
-            ));
-        }
-        let field_type = input_field_type(&param.rust_type, param.required);
-        out.push_str(&format!("    {}: {field_type},\n", param.rust_name));
-    }
-
-    // Request body fields
-    if let Some(fields) = body_fields {
-        for field in fields {
-            if let Some(ref desc) = field.description {
-                out.push_str(&format!(
-                    "    #[schemars(description = \"{}\")]\n",
-                    escape_string(desc)
-                ));
-            }
-            let field_type = input_field_type(&field.rust_type, field.required);
-            out.push_str(&format!("    {}: {field_type},\n", field.rust_name));
-        }
-    }
-
-    out.push_str("}\n\n");
+        .collect()
 }
 
-fn generate_tool_method(out: &mut String, op: &Operation) {
-    let method_name = op.id.to_snake_case();
-    let input_struct = format!("{}Input", op.id.to_upper_camel_case());
+/// Build the input struct for an operation, or `None` when it has no inputs
+/// (those tools take `serde_json::Value` instead).
+fn input_struct(op: &Operation) -> Option<StructDef> {
+    let params = input_params(op);
+    let body_fields = op.request_body.as_ref().map(|b| &b.fields);
+    let has_body_fields = body_fields.is_some_and(|f| !f.is_empty());
 
-    // Tool description from summary/description
+    if params.is_empty() && !has_body_fields {
+        return None;
+    }
+
+    let described = |description: &Option<String>| {
+        description.as_ref().map_or_else(Vec::new, |d| {
+            vec![Attr::KeyValue {
+                name: path(&["schemars"]),
+                key: id("description"),
+                value: StrLit::one_line(d.clone()),
+            }]
+        })
+    };
+
+    let mut fields = Vec::new();
+    for p in &params {
+        fields.push(FieldDecl {
+            attrs: described(&p.description),
+            public: false,
+            name: id(&p.rust_name),
+            ty: input_field_ty(&p.rust_type, p.required),
+        });
+    }
+    if let Some(body) = body_fields {
+        for f in body {
+            fields.push(FieldDecl {
+                attrs: described(&f.description),
+                public: false,
+                name: id(&f.rust_name),
+                ty: input_field_ty(&f.rust_type, f.required),
+            });
+        }
+    }
+
+    Some(StructDef {
+        doc: Doc::default(),
+        attrs: vec![Attr::List(
+            id("derive"),
+            vec![path(&["Debug"]), path(&["Deserialize"]), path(&["schemars", "JsonSchema"])],
+        )],
+        public: false,
+        name: id(&input_struct_name(op)),
+        fields,
+    })
+}
+
+fn input_struct_name(op: &Operation) -> String {
+    format!("{}Input", op.id.to_upper_camel_case())
+}
+
+fn input_field_ty(rt: &RustType, required: bool) -> TypeExpr {
+    if required || rt.is_option() {
+        TypeExpr::Ir(rt.clone())
+    } else {
+        TypeExpr::App(path(&["Option"]), vec![TypeExpr::Ir(rt.clone())])
+    }
+}
+
+// ── Server construction ────────────────────────────────────────────────────
+
+fn constructor(client_type: &str, config_type: &str) -> FnDef {
+    let load_config = Stmt::Let {
+        name: id("config"),
+        mutable: false,
+        ty: None,
+        init: Expr::Call(path(&[config_type, "load"]), vec![]),
+    };
+
+    let resolve_key = Stmt::Let {
+        name: id("api_key"),
+        mutable: false,
+        ty: None,
+        init: Expr::Try(Box::new(call(
+            Expr::Call(
+                path(&["auth", "resolve_api_key"]),
+                vec![Expr::Path(path(&["None"])), Expr::Ref(Box::new(var("config")))],
+            ),
+            "map_err",
+            vec![stringify_err()],
+        ))),
+    };
+
+    let build_client = Stmt::LetWrapped {
+        name: id("client"),
+        init: Expr::Try(Box::new(call(
+            Expr::Call(
+                path(&[client_type, "new"]),
+                vec![
+                    Expr::Ref(Box::new(Expr::Field(Box::new(var("config")), id("api_url")))),
+                    Expr::Ref(Box::new(var("api_key"))),
+                ],
+            ),
+            "map_err",
+            vec![stringify_err()],
+        ))),
+    };
+
+    let ok_self = Expr::Call(
+        path(&["Ok"]),
+        vec![Expr::StructLit {
+            path: path(&["Self"]),
+            fields: vec![
+                FieldInit::Shorthand(id("client")),
+                FieldInit::Named(
+                    id("tool_router"),
+                    Expr::Call(path(&["Self", "tool_router"]), vec![]),
+                ),
+            ],
+            braces: Braces::Multiline,
+        }],
+    );
+
+    FnDef {
+        doc: Doc::default(),
+        attrs: vec![],
+        public: false,
+        is_async: false,
+        name: id("new"),
+        generics: vec![],
+        params: vec![],
+        params_layout: Params::Inline,
+        ret: TypeExpr::App(
+            path(&["Result"]),
+            vec![TypeExpr::Path(path(&["Self"])), TypeExpr::Ir(RustType::String)],
+        ),
+        body: Block(vec![
+            load_config,
+            resolve_key,
+            build_client,
+            Stmt::Blank,
+            Stmt::Tail(ok_self),
+        ]),
+    }
+}
+
+fn get_info(spec: &ApiSpec) -> FnDef {
+    let default_instructions = format!("{} MCP server", spec.name);
+    let instructions = spec.description.as_deref().unwrap_or(&default_instructions);
+
+    let server_info = Expr::StructLit {
+        path: path(&["ServerInfo"]),
+        fields: vec![
+            FieldInit::Named(
+                id("instructions"),
+                Expr::CallWrapped {
+                    func: path(&["Some"]),
+                    arg: Box::new(Expr::Chain {
+                        receiver: Box::new(Expr::Str(StrLit::one_line(instructions))),
+                        links: vec![super::rust_ast::ChainLink::Call(id("into"), vec![])],
+                    }),
+                },
+            ),
+            FieldInit::Named(
+                id("capabilities"),
+                call(
+                    call(
+                        Expr::Call(path(&["ServerCapabilities", "builder"]), vec![]),
+                        "enable_tools",
+                        vec![],
+                    ),
+                    "build",
+                    vec![],
+                ),
+            ),
+            FieldInit::Rest(Expr::Call(path(&["Default", "default"]), vec![])),
+        ],
+        braces: Braces::Multiline,
+    };
+
+    FnDef {
+        doc: Doc::default(),
+        attrs: vec![],
+        public: false,
+        is_async: false,
+        name: id("get_info"),
+        generics: vec![],
+        params: vec![Param::SelfRef],
+        params_layout: Params::Inline,
+        ret: TypeExpr::Path(path(&["ServerInfo"])),
+        body: Block(vec![Stmt::Tail(server_info)]),
+    }
+}
+
+fn run_fn(mcp_struct: &str) -> FnDef {
+    // let server = <Mcp>::new()?.serve(stdio()).await?;
+    let serve = Stmt::Let {
+        name: id("server"),
+        mutable: false,
+        ty: None,
+        init: Expr::Try(Box::new(Expr::Await(Box::new(call(
+            Expr::Try(Box::new(Expr::Call(path(&[mcp_struct, "new"]), vec![]))),
+            "serve",
+            vec![Expr::Call(path(&["stdio"]), vec![])],
+        ))))),
+    };
+
+    FnDef {
+        doc: Doc::default(),
+        attrs: vec![],
+        public: true,
+        is_async: true,
+        name: id("run"),
+        generics: vec![],
+        params: vec![],
+        params_layout: Params::Inline,
+        ret: TypeExpr::App(
+            path(&["std", "result", "Result"]),
+            vec![
+                TypeExpr::Unit,
+                TypeExpr::App(
+                    path(&["Box"]),
+                    vec![TypeExpr::Dyn(path(&["std", "error", "Error"]))],
+                ),
+            ],
+        ),
+        body: Block(vec![
+            serve,
+            Stmt::Semi(Expr::Try(Box::new(Expr::Await(Box::new(call(
+                var("server"),
+                "waiting",
+                vec![],
+            )))))),
+            Stmt::Tail(Expr::Call(path(&["Ok"]), vec![Expr::Unit])),
+        ]),
+    }
+}
+
+// ── Tool methods ───────────────────────────────────────────────────────────
+
+/// Split an OpenAPI path into a format template.
+///
+/// Path parameters become captured holes keyed on their **raw** OpenAPI name.
+/// That reproduces the established output exactly — and makes visible a
+/// pre-existing defect it contains: the success message for an operation with
+/// a path parameter emits `format!("Success: DELETE /x/{xId}")`, a hole naming
+/// a variable that is not in scope in the generated file. Modelling it as a
+/// real hole records the bug rather than hiding it behind escaped braces.
+///
+/// A parameter whose name is not a legal Rust identifier could never have
+/// compiled; it is emitted as literal text (braces doubled) instead.
+fn message_template(prefix: &str, method: HttpMethod, op_path: &str) -> FormatTemplate {
+    let mut template = FormatTemplate::new().lit(prefix).lit(method.to_string()).lit(" ");
+    let mut rest = op_path;
+
+    while let Some(open) = rest.find('{') {
+        let Some(close_rel) = rest[open..].find('}') else {
+            break;
+        };
+        let close = open + close_rel;
+        if !rest[..open].is_empty() {
+            template = template.lit(&rest[..open]);
+        }
+        template = match Ident::new(&rest[open + 1..close]) {
+            Ok(name) => template.captured(name),
+            Err(_) => template.lit(&rest[open..=close]),
+        };
+        rest = &rest[close + 1..];
+    }
+    if !rest.is_empty() {
+        template = template.lit(rest);
+    }
+    template
+}
+
+/// Arguments passed from the deserialised input struct to the client method.
+fn client_args(op: &Operation, has_body: bool) -> Vec<Expr> {
+    let mut args = Vec::new();
+
+    for p in op.parameters.iter().filter(|p| p.location == ParamLocation::Path) {
+        args.push(Expr::Ref(Box::new(input_field(&p.rust_name))));
+    }
+    for p in op.parameters.iter().filter(|p| p.location == ParamLocation::Query) {
+        if p.rust_type.is_option() {
+            args.push(call(input_field(&p.rust_name), "as_deref", vec![]));
+        } else {
+            args.push(input_field(&p.rust_name));
+        }
+    }
+    if has_body {
+        args.push(Expr::Ref(Box::new(var("req"))));
+    }
+    args
+}
+
+fn tool_method(op: &Operation) -> FnDef {
+    let method_name = op.id.to_snake_case();
+
     let default_description = format!("{} operation", op.id);
     let description = op
         .summary
@@ -200,136 +483,142 @@ fn generate_tool_method(out: &mut String, op: &Operation) {
         .or(op.description.as_deref())
         .unwrap_or(&default_description);
 
-    out.push_str(&format!(
-        "    #[tool(description = \"{}\")]\n",
-        escape_string(description)
-    ));
-
-    // Determine if this operation has any input parameters
     let has_params = !op.parameters.is_empty()
-        || op
-            .request_body
-            .as_ref()
-            .is_some_and(|b| !b.fields.is_empty());
+        || op.request_body.as_ref().is_some_and(|b| !b.fields.is_empty());
+    let has_body = op.request_body.as_ref().is_some_and(|b| !b.fields.is_empty());
 
-    if has_params {
-        out.push_str(&format!(
-            "    async fn {method_name}(&self, Parameters(input): Parameters<{input_struct}>) -> String {{\n"
-        ));
+    // Parameters(input): Parameters<XInput>  /  Parameters(_): Parameters<serde_json::Value>
+    let (binding, input_ty) = if has_params {
+        (var("input"), TypeExpr::Path(path(&[&input_struct_name(op)])))
     } else {
-        out.push_str(&format!(
-            "    async fn {method_name}(&self, Parameters(_): Parameters<serde_json::Value>) -> String {{\n"
-        ));
+        (var("_"), TypeExpr::Ir(RustType::Value))
+    };
+    let parameters_param = Param::Destructured {
+        pattern: Expr::Call(path(&["Parameters"]), vec![binding]),
+        ty: TypeExpr::App(path(&["Parameters"]), vec![input_ty]),
+    };
+
+    let mut body = Vec::new();
+    if has_body {
+        body.push(request_body_stmt(op));
     }
 
-    // Build the client method call
-    let client_method = method_name.clone();
+    // A delete, or a stop/delete-prefixed operation, has no rich response to
+    // format; it reports success instead.
+    let snake = op.id.to_snake_case();
+    let is_simple_action = matches!(op.method, HttpMethod::Delete)
+        || snake.starts_with("stop")
+        || snake.starts_with("delete");
 
-    // Collect path params
-    let path_params: Vec<&OpParameter> = op
-        .parameters
-        .iter()
-        .filter(|p| p.location == ParamLocation::Path)
-        .collect();
+    let ok_arm = if is_simple_action {
+        MatchArm {
+            pattern: Expr::Call(path(&["Ok"]), vec![var("_")]),
+            body: Expr::Format(
+                message_template("Success: ", op.method, &op.path),
+                vec![],
+            ),
+        }
+    } else {
+        MatchArm {
+            pattern: Expr::Call(path(&["Ok"]), vec![var("result")]),
+            body: Expr::Call(
+                path(&["format", &format!("format_{method_name}")]),
+                vec![Expr::Ref(Box::new(var("result")))],
+            ),
+        }
+    };
 
-    let query_params: Vec<&OpParameter> = op
-        .parameters
-        .iter()
-        .filter(|p| p.location == ParamLocation::Query)
-        .collect();
+    let err_arm = MatchArm {
+        pattern: Expr::Call(path(&["Err"]), vec![var("e")]),
+        body: Expr::Format(FormatTemplate::new().lit("Error: ").captured(id("e")), vec![]),
+    };
 
-    let has_body = op
+    body.push(Stmt::Match {
+        scrutinee: Expr::Await(Box::new(call(
+            Expr::Field(Box::new(var("self")), id("client")),
+            &method_name,
+            client_args(op, has_body),
+        ))),
+        arms: vec![ok_arm, err_arm],
+    });
+
+    FnDef {
+        doc: Doc::default(),
+        attrs: vec![Attr::KeyValue {
+            name: path(&["tool"]),
+            key: id("description"),
+            value: StrLit::one_line(description),
+        }],
+        public: false,
+        is_async: true,
+        name: id(&method_name),
+        generics: vec![],
+        params: vec![Param::SelfRef, parameters_param],
+        params_layout: Params::Inline,
+        ret: TypeExpr::Ir(RustType::String),
+        body: Block(body),
+    }
+}
+
+/// `let req = crate::api::types::XRequest { field: input.field.clone(), … };`
+fn request_body_stmt(op: &Operation) -> Stmt {
+    let fields = op
         .request_body
         .as_ref()
-        .is_some_and(|b| !b.fields.is_empty());
+        .map(|b| {
+            b.fields
+                .iter()
+                .map(|f| {
+                    FieldInit::Named(
+                        id(&f.rust_name),
+                        call(input_field(&f.rust_name), "clone", vec![]),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
-    // Build client call arguments
-    let mut args = Vec::new();
-
-    for param in &path_params {
-        args.push(format!("&input.{}", param.rust_name));
-    }
-
-    for param in &query_params {
-        if is_option_type(&param.rust_type) {
-            args.push(format!("input.{}.as_deref()", param.rust_name));
-        } else {
-            args.push(format!("input.{}", param.rust_name));
-        }
-    }
-
-    if has_body {
-        // Build the request body from input fields
-        generate_request_body_construction(out, op);
-        args.push("&req".into());
-    }
-
-    let args_str = args.join(", ");
-
-    out.push_str(&format!(
-        "        match self.client.{client_method}({args_str}).await {{\n"
-    ));
-
-    // Determine if this is a simple action (stop/delete) or has a rich response
-    let is_simple_action = matches!(op.method, HttpMethod::Delete)
-        || op.id.to_snake_case().starts_with("stop")
-        || op.id.to_snake_case().starts_with("delete");
-
-    if is_simple_action {
-        out.push_str(&format!(
-            "            Ok(_) => format!(\"Success: {} {}\"),\n",
-            op.method, op.path
-        ));
-    } else {
-        let format_fn = format!("format_{method_name}");
-        out.push_str(&format!(
-            "            Ok(result) => format::{format_fn}(&result),\n"
-        ));
-    }
-    out.push_str("            Err(e) => format!(\"Error: {e}\"),\n");
-    out.push_str("        }\n");
-    out.push_str("    }\n\n");
-}
-
-fn generate_request_body_construction(out: &mut String, op: &Operation) {
-    if let Some(ref body) = op.request_body {
-        let request_type = op.request_body_type_name();
-        out.push_str(&format!(
-            "        let req = crate::api::types::{request_type} {{\n"
-        ));
-        for field in &body.fields {
-            out.push_str(&format!(
-                "            {}: input.{}.clone(),\n",
-                field.rust_name, field.rust_name
-            ));
-        }
-        out.push_str("        };\n");
+    Stmt::Let {
+        name: id("req"),
+        mutable: false,
+        ty: None,
+        init: Expr::StructLit {
+            path: path(&["crate", "api", "types", &op.request_body_type_name()]),
+            fields,
+            braces: Braces::Multiline,
+        },
     }
 }
 
+// ── Test shims ─────────────────────────────────────────────────────────────
+//
+// These preserve the pre-refactor unit tests unchanged while pointing them at
+// the typed surface that replaced the hand-rolled helpers.
+
+/// The rendered field type, e.g. `Option<String>`.
+#[cfg(test)]
 fn input_field_type(rt: &RustType, required: bool) -> String {
-    if required {
-        rust_type_string(rt)
-    } else {
-        match rt {
-            RustType::Option(_) => rust_type_string(rt),
-            _ => format!("Option<{}>", rust_type_string(rt)),
-        }
-    }
+    input_field_ty(rt, required).to_rust()
 }
 
+#[cfg(test)]
 fn rust_type_string(rt: &RustType) -> String {
-    rt.to_string()
+    TypeExpr::Ir(rt.clone()).to_rust()
 }
 
+#[cfg(test)]
 fn is_option_type(rt: &RustType) -> bool {
     rt.is_option()
 }
 
+/// The escaped body of a single-line string literal, quotes stripped.
+///
+/// Escaping now lives in `StrLit`; this renders through it so the original
+/// escaping tests still assert against the code that actually runs.
+#[cfg(test)]
 fn escape_string(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', " ")
+    let quoted = StrLit::one_line(s).to_rust();
+    quoted[1..quoted.len() - 1].to_string()
 }
 
 #[cfg(test)]

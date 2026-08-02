@@ -169,6 +169,14 @@ impl StrLit {
         Self { value: value.into(), one_line: true }
     }
 
+    /// Render as a Rust string literal, quotes included.
+    #[must_use]
+    pub fn to_rust(&self) -> String {
+        let mut out = String::new();
+        self.render(&mut out);
+        out
+    }
+
     fn render(&self, out: &mut String) {
         out.push('"');
         for c in self.value.chars() {
@@ -271,6 +279,8 @@ pub enum TypeExpr {
     Ref(Box<TypeExpr>),
     /// `Name<A, B>`.
     App(Path, Vec<TypeExpr>),
+    /// `dyn Trait`.
+    Dyn(Path),
     /// `()`.
     Unit,
 }
@@ -317,6 +327,10 @@ impl TypeExpr {
                 }
                 out.push('>');
             }
+            Self::Dyn(p) => {
+                out.push_str("dyn ");
+                render_path(p, out);
+            }
             Self::Unit => out.push_str("()"),
         }
     }
@@ -357,6 +371,8 @@ pub enum FieldInit {
     Shorthand(Ident),
     /// `name: value`.
     Named(Ident, Expr),
+    /// `..expr` — functional update, e.g. `..Default::default()`.
+    Rest(Expr),
 }
 
 /// How a struct literal is laid out.
@@ -405,6 +421,9 @@ pub enum Expr {
     IfElseInline { cond: Box<Expr>, then: Box<Expr>, otherwise: Box<Expr> },
     /// `|param| body`.
     Closure(Ident, Box<Expr>),
+    /// A call whose single argument sits on its own line, with a trailing
+    /// comma, as the established output breaks it out.
+    CallWrapped { func: Path, arg: Box<Expr> },
     /// `()` — the unit value.
     Unit,
     /// A turbofish member access: `Option::<&str>::None`.
@@ -517,7 +536,9 @@ impl Expr {
                         for f in fields {
                             newline(out, indent + 1);
                             render_field_init(f, out, indent + 1);
-                            out.push(',');
+                            if !matches!(f, FieldInit::Rest(_)) {
+                                out.push(',');
+                            }
                         }
                         newline(out, indent);
                         out.push('}');
@@ -548,6 +569,15 @@ impl Expr {
                 out.push_str("| ");
                 body.render(out, indent);
             }
+            Self::CallWrapped { func, arg } => {
+                render_path(func, out);
+                out.push('(');
+                newline(out, indent + 1);
+                arg.render(out, indent + 1);
+                out.push(',');
+                newline(out, indent);
+                out.push(')');
+            }
             Self::Unit => out.push_str("()"),
             Self::Turbofish { base, ty, member } => {
                 render_path(base, out);
@@ -566,6 +596,10 @@ fn render_field_init(f: &FieldInit, out: &mut String, indent: usize) {
         FieldInit::Named(name, value) => {
             out.push_str(name.as_str());
             out.push_str(": ");
+            value.render(out, indent);
+        }
+        FieldInit::Rest(value) => {
+            out.push_str("..");
             value.render(out, indent);
         }
     }
@@ -605,6 +639,8 @@ pub struct MatchArm {
 pub enum Stmt {
     /// `let [mut] name[: Ty] = init;`
     Let { name: Ident, mutable: bool, ty: Option<TypeExpr>, init: Expr },
+    /// `let name =` followed by the initialiser on the next line, indented.
+    LetWrapped { name: Ident, init: Expr },
     /// `lhs = rhs;`
     Assign { lhs: Expr, rhs: Expr },
     /// `expr;`
@@ -639,6 +675,14 @@ impl Stmt {
                 }
                 out.push_str(" = ");
                 init.render(out, indent);
+                out.push(';');
+            }
+            Self::LetWrapped { name, init } => {
+                out.push_str("let ");
+                out.push_str(name.as_str());
+                out.push_str(" =");
+                newline(out, indent + 1);
+                init.render(out, indent + 1);
                 out.push(';');
             }
             Self::Assign { lhs, rhs } => {
@@ -850,11 +894,41 @@ pub struct ImplBlock {
     pub items: Vec<ImplItem>,
 }
 
+/// One entry in a `use` group.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UseTree {
+    /// A plain path, e.g. `ServerHandler` or `transport::stdio`.
+    Leaf(Path),
+    /// A nested group, e.g. `handler::server::{a, b}`.
+    Group(Path, Vec<UseTree>),
+}
+
+impl UseTree {
+    fn render(&self, out: &mut String) {
+        match self {
+            Self::Leaf(p) => render_path(p, out),
+            Self::Group(p, children) => {
+                render_path(p, out);
+                out.push_str("::{");
+                for (i, c) in children.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(", ");
+                    }
+                    c.render(out);
+                }
+                out.push('}');
+            }
+        }
+    }
+}
+
 /// A top-level item.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Item {
     /// `use path::{a, b};` — `leaves` empty means `use path;`.
     Use { path: Path, leaves: Vec<Path>, glob: bool },
+    /// A `use` whose group is broken across lines, one `lines` entry per line.
+    UseLines { path: Path, lines: Vec<Vec<UseTree>> },
     Struct(StructDef),
     Impl(ImplBlock),
     Fn(FnDef),
@@ -1000,6 +1074,23 @@ impl Item {
                     out.push('}');
                 }
                 out.push(';');
+            }
+            Self::UseLines { path, lines } => {
+                out.push_str("use ");
+                render_path(path, out);
+                out.push_str("::{");
+                for line in lines {
+                    newline(out, 1);
+                    for (i, t) in line.iter().enumerate() {
+                        if i > 0 {
+                            out.push_str(", ");
+                        }
+                        t.render(out);
+                    }
+                    out.push(',');
+                }
+                newline(out, 0);
+                out.push_str("};");
             }
             Self::Struct(s) => {
                 let mut first = true;
