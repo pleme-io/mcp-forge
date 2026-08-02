@@ -680,6 +680,198 @@ mod tests {
         }
     }
 
+    // -- Emission matrix: every operation shape x every auth mode --
+    //
+    // `make_petstore_spec` exercises four operation shapes and one auth mode.
+    // These snapshots pin the emitted bytes across the whole variant space so
+    // any change to *how* client.rs / mcp.rs build their output is proven to
+    // leave *what* they emit untouched.
+    //
+    // A new emission variant that lands without a row here is invisible to the
+    // gate, so add the operation to `matrix_operations` when you add the branch.
+
+    /// A description that is hostile to naive string splicing: an embedded
+    /// double quote, a backslash, and a newline. Pins the escaping contract.
+    const HOSTILE: &str = "He said \"hi\"\\then\nleft";
+
+    fn q(name: &str, required: bool, ty: RustType) -> OpParameter {
+        OpParameter {
+            name: name.into(),
+            rust_name: name.to_string(),
+            location: ParamLocation::Query,
+            required,
+            rust_type: ty,
+            description: Some(HOSTILE.into()),
+        }
+    }
+
+    fn p(name: &str, rust_name: &str) -> OpParameter {
+        OpParameter {
+            name: name.into(),
+            rust_name: rust_name.into(),
+            location: ParamLocation::Path,
+            required: true,
+            rust_type: RustType::String,
+            description: None,
+        }
+    }
+
+    fn body(type_name: &str, fields: Vec<FieldDef>) -> OpRequestBody {
+        OpRequestBody {
+            required: true,
+            fields,
+            type_name: Some(type_name.into()),
+        }
+    }
+
+    fn op(
+        id: &str,
+        method: HttpMethod,
+        path: &str,
+        parameters: Vec<OpParameter>,
+        request_body: Option<OpRequestBody>,
+        response_type: Option<RustType>,
+    ) -> Operation {
+        Operation {
+            id: id.into(),
+            method,
+            path: path.into(),
+            summary: Some(format!("{id} summary")),
+            description: None,
+            parameters,
+            request_body,
+            response_type,
+            errors: vec![],
+        }
+    }
+
+    /// Every emission branch in `client.rs` and `mcp.rs`, one operation each.
+    fn matrix_operations() -> Vec<Operation> {
+        let f = |n: &str| FieldDef {
+            name: n.into(),
+            rust_name: n.into(),
+            rust_type: RustType::String,
+            required: true,
+            description: Some(HOSTILE.into()),
+            default_value: None,
+        };
+        let named = |n: &str| Some(RustType::Named(n.into()));
+
+        vec![
+            // Static path, no params, no body, with/without response.
+            op("static_get", HttpMethod::Get, "/x", vec![], None, named("X")),
+            op("static_get_empty", HttpMethod::Get, "/ping", vec![], None, None),
+            op("static_post_nobody", HttpMethod::Post, "/kick", vec![], None, named("X")),
+            op("static_post_nobody_noresp", HttpMethod::Post, "/kick2", vec![], None, None),
+            // Static path with a request body.
+            op("static_post_body", HttpMethod::Post, "/x", vec![], Some(body("MkX", vec![f("name")])), named("X")),
+            op("static_post_body_noresp", HttpMethod::Post, "/notify", vec![], Some(body("Notify", vec![f("msg")])), None),
+            // Path parameters only.
+            op("one_path_param", HttpMethod::Get, "/x/{xId}", vec![p("xId", "x_id")], None, named("X")),
+            op("two_path_params", HttpMethod::Get, "/a/{aId}/b/{bId}", vec![p("aId", "a_id"), p("bId", "b_id")], None, named("X")),
+            op("path_param_put_body", HttpMethod::Put, "/x/{xId}", vec![p("xId", "x_id")], Some(body("UpX", vec![f("name")])), named("X")),
+            op("path_param_put_noresp", HttpMethod::Put, "/y/{yId}", vec![p("yId", "y_id")], Some(body("UpY", vec![f("name")])), None),
+            op("path_param_patch_body", HttpMethod::Patch, "/x/{xId}", vec![p("xId", "x_id")], Some(body("PatchX", vec![f("name")])), named("X")),
+            op("path_param_patch_noresp", HttpMethod::Patch, "/z/{zId}", vec![p("zId", "z_id")], Some(body("PatchZ", vec![f("name")])), None),
+            // Delete, both response shapes. Also the mcp "simple action" branch.
+            op("delete_with_resp", HttpMethod::Delete, "/x/{xId}", vec![p("xId", "x_id")], None, named("Gone")),
+            op("delete_no_resp", HttpMethod::Delete, "/y/{yId}", vec![p("yId", "y_id")], None, None),
+            // The mcp simple-action branch keyed on the `stop` id prefix.
+            op("stop_thing", HttpMethod::Post, "/stop", vec![], None, named("X")),
+            // Query parameters: required, optional, and mixed ordering.
+            op("query_required", HttpMethod::Get, "/q1", vec![q("limit", true, RustType::I64)], None, named("X")),
+            op("query_optional", HttpMethod::Get, "/q2", vec![q("cursor", false, RustType::Option(Box::new(RustType::String)))], None, named("X")),
+            op(
+                "query_optional_then_required",
+                HttpMethod::Get,
+                "/q3",
+                vec![
+                    q("status", false, RustType::Option(Box::new(RustType::String))),
+                    q("limit", true, RustType::I64),
+                ],
+                None,
+                named("X"),
+            ),
+            op(
+                "query_non_option_not_required",
+                HttpMethod::Get,
+                "/q4",
+                vec![q("page", false, RustType::I64)],
+                None,
+                named("X"),
+            ),
+            // Path + query combined, with and without a body.
+            op(
+                "path_and_query",
+                HttpMethod::Get,
+                "/u/{uId}/r",
+                vec![p("uId", "u_id"), q("page", false, RustType::Option(Box::new(RustType::I64)))],
+                None,
+                named("X"),
+            ),
+            op(
+                "path_query_and_body",
+                HttpMethod::Post,
+                "/u/{uId}/r",
+                vec![p("uId", "u_id"), q("dry", true, RustType::Bool)],
+                Some(body("MkR", vec![f("name")])),
+                named("X"),
+            ),
+        ]
+    }
+
+    fn make_matrix_spec(auth: AuthMethod) -> ApiSpec {
+        ApiSpec {
+            name: "matrix_api".into(),
+            description: Some(HOSTILE.into()),
+            version: "2.3.4".into(),
+            base_url: Some("https://matrix.example.com".into()),
+            auth,
+            operations: matrix_operations(),
+            types: vec![],
+        }
+    }
+
+    fn auth_modes() -> Vec<(&'static str, AuthMethod)> {
+        vec![
+            ("bearer", AuthMethod::Bearer),
+            ("basic", AuthMethod::Basic),
+            ("apikey", AuthMethod::ApiKeyHeader("X-Api-Key".into())),
+            ("noauth", AuthMethod::None),
+        ]
+    }
+
+    #[test]
+    fn snapshot_client_rs_matrix() {
+        for (label, auth) in auth_modes() {
+            let spec = make_matrix_spec(auth);
+            let code = super::client::generate(&spec);
+            insta::assert_snapshot!(format!("client_rs_matrix_{label}"), code);
+        }
+    }
+
+    #[test]
+    fn snapshot_mcp_rs_matrix() {
+        for (label, auth) in auth_modes() {
+            let spec = make_matrix_spec(auth);
+            let code = super::mcp::generate(&spec);
+            insta::assert_snapshot!(format!("mcp_rs_matrix_{label}"), code);
+        }
+    }
+
+    /// A spec with no description at all takes the fallback branches in both
+    /// generators (client doc comment omitted, mcp instructions synthesised).
+    #[test]
+    fn snapshot_matrix_no_description() {
+        let mut spec = make_matrix_spec(AuthMethod::Bearer);
+        spec.description = None;
+        for o in &mut spec.operations {
+            o.summary = None;
+        }
+        insta::assert_snapshot!("client_rs_matrix_nodesc", super::client::generate(&spec));
+        insta::assert_snapshot!("mcp_rs_matrix_nodesc", super::mcp::generate(&spec));
+    }
+
     // -- End-to-end: YAML spec → IR → generated project --
 
     #[test]

@@ -1,8 +1,7 @@
 #![cfg(test)]
 
 use crate::ir::{
-    ApiSpec, AuthMethod, EnumVariant, ErrorResponse, FieldDef, HttpMethod, OpParameter,
-    OpRequestBody, Operation, ParamLocation, RustType, TypeDef,
+    ApiSpec, AuthMethod, EnumVariant, FieldDef, HttpMethod, Operation, RustType, TypeDef,
 };
 use heck::{ToSnakeCase, ToUpperCamelCase};
 

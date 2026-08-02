@@ -1,0 +1,434 @@
+---
+source: src/gen/mod.rs
+expression: "super::client::generate(&spec)"
+---
+use crate::api::types::*;
+use crate::error::{MatrixApiError, Result};
+
+/// HTTP client for the matrix_api API.
+#[derive(Debug, Clone)]
+pub struct MatrixApiClient {
+    inner: reqwest::Client,
+    base_url: String,
+    api_key: String,
+}
+
+impl MatrixApiClient {
+    /// Create a new client.
+    pub fn new(base_url: &str, api_key: &str) -> Result<Self> {
+        let inner = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .user_agent("pleme-io/matrix_api 2.3.4")
+            .build()
+            .map_err(MatrixApiError::Request)?;
+
+        Ok(Self {
+            inner,
+            base_url: base_url.trim_end_matches('/').to_string(),
+            api_key: api_key.to_string(),
+        })
+    }
+
+    fn url(&self, path: &str) -> String {
+        format!("{}/{}", self.base_url, path.trim_start_matches('/'))
+    }
+
+    async fn get<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let resp = self
+            .inner
+            .get(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .send()
+            .await
+            .map_err(MatrixApiError::Request)?;
+        Self::handle_response(resp).await
+    }
+
+    async fn post<B: serde::Serialize, T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        let resp = self
+            .inner
+            .post(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .json(body)
+            .send()
+            .await
+            .map_err(MatrixApiError::Request)?;
+        Self::handle_response(resp).await
+    }
+
+    async fn post_empty<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let resp = self
+            .inner
+            .post(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .send()
+            .await
+            .map_err(MatrixApiError::Request)?;
+        Self::handle_response(resp).await
+    }
+
+    async fn put<B: serde::Serialize, T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        let resp = self
+            .inner
+            .put(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .json(body)
+            .send()
+            .await
+            .map_err(MatrixApiError::Request)?;
+        Self::handle_response(resp).await
+    }
+
+    async fn patch<B: serde::Serialize, T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        let resp = self
+            .inner
+            .patch(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .json(body)
+            .send()
+            .await
+            .map_err(MatrixApiError::Request)?;
+        Self::handle_response(resp).await
+    }
+
+    async fn delete<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let resp = self
+            .inner
+            .delete(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .send()
+            .await
+            .map_err(MatrixApiError::Request)?;
+        Self::handle_response(resp).await
+    }
+
+    async fn delete_empty(&self, path: &str) -> Result<()> {
+        let resp = self
+            .inner
+            .delete(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .send()
+            .await
+            .map_err(MatrixApiError::Request)?;
+        Self::handle_empty_response(resp).await
+    }
+
+    async fn post_empty_no_response(&self, path: &str) -> Result<()> {
+        let resp = self
+            .inner
+            .post(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .send()
+            .await
+            .map_err(MatrixApiError::Request)?;
+        Self::handle_empty_response(resp).await
+    }
+
+    async fn post_no_response<B: serde::Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<()> {
+        let resp = self
+            .inner
+            .post(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .json(body)
+            .send()
+            .await
+            .map_err(MatrixApiError::Request)?;
+        Self::handle_empty_response(resp).await
+    }
+
+    async fn put_no_response<B: serde::Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<()> {
+        let resp = self
+            .inner
+            .put(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .json(body)
+            .send()
+            .await
+            .map_err(MatrixApiError::Request)?;
+        Self::handle_empty_response(resp).await
+    }
+
+    async fn patch_no_response<B: serde::Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<()> {
+        let resp = self
+            .inner
+            .patch(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .json(body)
+            .send()
+            .await
+            .map_err(MatrixApiError::Request)?;
+        Self::handle_empty_response(resp).await
+    }
+
+    async fn get_empty(&self, path: &str) -> Result<()> {
+        let resp = self
+            .inner
+            .get(&self.url(path))
+            .bearer_auth(&self.api_key)
+            .send()
+            .await
+            .map_err(MatrixApiError::Request)?;
+        Self::handle_empty_response(resp).await
+    }
+
+    async fn handle_response<T: serde::de::DeserializeOwned>(
+        resp: reqwest::Response,
+    ) -> Result<T> {
+        let status = resp.status().as_u16();
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(MatrixApiError::Api { status, body });
+        }
+        let text = resp.text().await.map_err(MatrixApiError::Request)?;
+        serde_json::from_str(&text).map_err(MatrixApiError::Json)
+    }
+
+    async fn handle_empty_response(
+        resp: reqwest::Response,
+    ) -> Result<()> {
+        let status = resp.status().as_u16();
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(MatrixApiError::Api { status, body });
+        }
+        Ok(())
+    }
+
+    // -- Public API methods --
+
+    /// GET /x
+    pub async fn static_get(
+        &self,
+    ) -> Result<X> {
+        self.get("/x").await
+    }
+
+    /// GET /ping
+    pub async fn static_get_empty(
+        &self,
+    ) -> Result<()> {
+        self.get_empty("/ping").await
+    }
+
+    /// POST /kick
+    pub async fn static_post_nobody(
+        &self,
+    ) -> Result<X> {
+        self.post_empty("/kick").await
+    }
+
+    /// POST /kick2
+    pub async fn static_post_nobody_noresp(
+        &self,
+    ) -> Result<()> {
+        self.post_empty_no_response("/kick2").await
+    }
+
+    /// POST /x
+    pub async fn static_post_body(
+        &self,
+        req: &MkX,
+    ) -> Result<X> {
+        self.post("/x", req).await
+    }
+
+    /// POST /notify
+    pub async fn static_post_body_noresp(
+        &self,
+        req: &Notify,
+    ) -> Result<()> {
+        self.post_no_response("/notify", req).await
+    }
+
+    /// GET /x/{xId}
+    pub async fn one_path_param(
+        &self,
+        x_id: &str,
+    ) -> Result<X> {
+        self.get(&format!("/x/{x_id}")).await
+    }
+
+    /// GET /a/{aId}/b/{bId}
+    pub async fn two_path_params(
+        &self,
+        a_id: &str,
+        b_id: &str,
+    ) -> Result<X> {
+        self.get(&format!("/a/{a_id}/b/{b_id}")).await
+    }
+
+    /// PUT /x/{xId}
+    pub async fn path_param_put_body(
+        &self,
+        x_id: &str,
+        req: &UpX,
+    ) -> Result<X> {
+        self.put(&format!("/x/{x_id}"), req).await
+    }
+
+    /// PUT /y/{yId}
+    pub async fn path_param_put_noresp(
+        &self,
+        y_id: &str,
+        req: &UpY,
+    ) -> Result<()> {
+        self.put_no_response(&format!("/y/{y_id}"), req).await
+    }
+
+    /// PATCH /x/{xId}
+    pub async fn path_param_patch_body(
+        &self,
+        x_id: &str,
+        req: &PatchX,
+    ) -> Result<X> {
+        self.patch(&format!("/x/{x_id}"), req).await
+    }
+
+    /// PATCH /z/{zId}
+    pub async fn path_param_patch_noresp(
+        &self,
+        z_id: &str,
+        req: &PatchZ,
+    ) -> Result<()> {
+        self.patch_no_response(&format!("/z/{z_id}"), req).await
+    }
+
+    /// DELETE /x/{xId}
+    pub async fn delete_with_resp(
+        &self,
+        x_id: &str,
+    ) -> Result<Gone> {
+        self.delete(&format!("/x/{x_id}")).await
+    }
+
+    /// DELETE /y/{yId}
+    pub async fn delete_no_resp(
+        &self,
+        y_id: &str,
+    ) -> Result<()> {
+        self.delete_empty(&format!("/y/{y_id}")).await
+    }
+
+    /// POST /stop
+    pub async fn stop_thing(
+        &self,
+    ) -> Result<X> {
+        self.post_empty("/stop").await
+    }
+
+    /// GET /q1
+    pub async fn query_required(
+        &self,
+        limit: i64,
+    ) -> Result<X> {
+        let mut path = format!("/q1");
+        let mut has_query = false;
+        path.push_str(if has_query { "&" } else { "?" });
+        path.push_str(&format!("limit={}", urlencoding::encode(&limit.to_string())));
+        has_query = true;
+        self.get(&path).await
+    }
+
+    /// GET /q2
+    pub async fn query_optional(
+        &self,
+        cursor: Option<String>,
+    ) -> Result<X> {
+        let mut path = format!("/q2");
+        let mut has_query = false;
+        if let Some(ref v) = cursor {
+            path.push_str(if has_query { "&" } else { "?" });
+            path.push_str(&format!("cursor={}", urlencoding::encode(&v.to_string())));
+            has_query = true;
+        }
+        self.get(&path).await
+    }
+
+    /// GET /q3
+    pub async fn query_optional_then_required(
+        &self,
+        status: Option<String>,
+        limit: i64,
+    ) -> Result<X> {
+        let mut path = format!("/q3");
+        let mut has_query = false;
+        if let Some(ref v) = status {
+            path.push_str(if has_query { "&" } else { "?" });
+            path.push_str(&format!("status={}", urlencoding::encode(&v.to_string())));
+            has_query = true;
+        }
+        path.push_str(if has_query { "&" } else { "?" });
+        path.push_str(&format!("limit={}", urlencoding::encode(&limit.to_string())));
+        has_query = true;
+        self.get(&path).await
+    }
+
+    /// GET /q4
+    pub async fn query_non_option_not_required(
+        &self,
+        page: Option<i64>,
+    ) -> Result<X> {
+        let mut path = format!("/q4");
+        let mut has_query = false;
+        path.push_str(if has_query { "&" } else { "?" });
+        path.push_str(&format!("page={}", urlencoding::encode(&page.to_string())));
+        has_query = true;
+        self.get(&path).await
+    }
+
+    /// GET /u/{uId}/r
+    pub async fn path_and_query(
+        &self,
+        u_id: &str,
+        page: Option<i64>,
+    ) -> Result<X> {
+        let mut path = format!("/u/{u_id}/r");
+        let mut has_query = false;
+        if let Some(ref v) = page {
+            path.push_str(if has_query { "&" } else { "?" });
+            path.push_str(&format!("page={}", urlencoding::encode(&v.to_string())));
+            has_query = true;
+        }
+        self.get(&path).await
+    }
+
+    /// POST /u/{uId}/r
+    pub async fn path_query_and_body(
+        &self,
+        u_id: &str,
+        dry: bool,
+        req: &MkR,
+    ) -> Result<X> {
+        let mut path = format!("/u/{u_id}/r");
+        let mut has_query = false;
+        path.push_str(if has_query { "&" } else { "?" });
+        path.push_str(&format!("dry={}", urlencoding::encode(&dry.to_string())));
+        has_query = true;
+        self.post(&path, req).await
+    }
+
+}
