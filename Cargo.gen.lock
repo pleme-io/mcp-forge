@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "0b9a74ddf0fb7be29322fad9333e434b58529a9690c58f184da560f79dc55a54",
+  "cargo_lock_sha256": "16b0f4264196e882a928a3a5bcc93de0d245112566af604bd80c06d3c9801e9e",
   "manifest_sha256": {
-    "Cargo.toml": "5d9f5ecf23a6c6847675b794e07428f71963f2379bfff3936a5ed6110a182d04"
+    "Cargo.toml": "ca3b278b4961f569a44b14f213b0b7855532ec25dd7149c6db2244a70c1c8439"
   },
   "target_resolves": {
     "base": {
@@ -135,11 +135,11 @@
         "build_dependencies": [],
         "features": []
       },
-      "clap-4.6.5": {
+      "clap-4.6.6": {
         "runtime_dependencies": [
           {
             "name": "clap_builder",
-            "package_key": "clap_builder-4.6.5",
+            "package_key": "clap_builder-4.6.6",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -170,7 +170,7 @@
           "usage"
         ]
       },
-      "clap_builder-4.6.5": {
+      "clap_builder-4.6.6": {
         "runtime_dependencies": [
           {
             "name": "anstream",
@@ -600,7 +600,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "mcp-forge-0.1.1": {
+      "mcp-forge-0.1.2": {
         "runtime_dependencies": [
           {
             "name": "anyhow",
@@ -614,7 +614,7 @@
           },
           {
             "name": "clap",
-            "package_key": "clap-4.6.5",
+            "package_key": "clap-4.6.6",
             "kind": "normal",
             "features": [
               "derive"
@@ -2361,7 +2361,7 @@
     "cfg-if-1.0.4": {
       "edition": "2018"
     },
-    "clap-4.6.5": {
+    "clap-4.6.6": {
       "edition": "2024",
       "binaries": [
         {
@@ -2370,7 +2370,7 @@
         }
       ]
     },
-    "clap_builder-4.6.5": {
+    "clap_builder-4.6.6": {
       "edition": "2024"
     },
     "clap_derive-4.6.4": {
@@ -2436,7 +2436,7 @@
     "matchers-0.2.0": {
       "edition": "2018"
     },
-    "mcp-forge-0.1.1": {
+    "mcp-forge-0.1.2": {
       "edition": "2024",
       "binaries": [
         {
