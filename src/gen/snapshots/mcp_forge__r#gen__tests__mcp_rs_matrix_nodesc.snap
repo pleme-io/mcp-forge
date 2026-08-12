@@ -150,7 +150,7 @@ impl MatrixApiMcp {
     async fn static_get(&self, Parameters(_): Parameters<serde_json::Value>) -> String {
         match self.client.static_get().await {
             Ok(result) => format::format_static_get(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -158,7 +158,7 @@ impl MatrixApiMcp {
     async fn static_get_empty(&self, Parameters(_): Parameters<serde_json::Value>) -> String {
         match self.client.static_get_empty().await {
             Ok(result) => format::format_static_get_empty(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -166,7 +166,7 @@ impl MatrixApiMcp {
     async fn static_post_nobody(&self, Parameters(_): Parameters<serde_json::Value>) -> String {
         match self.client.static_post_nobody().await {
             Ok(result) => format::format_static_post_nobody(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -174,7 +174,7 @@ impl MatrixApiMcp {
     async fn static_post_nobody_noresp(&self, Parameters(_): Parameters<serde_json::Value>) -> String {
         match self.client.static_post_nobody_noresp().await {
             Ok(result) => format::format_static_post_nobody_noresp(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -185,7 +185,7 @@ impl MatrixApiMcp {
         };
         match self.client.static_post_body(&req).await {
             Ok(result) => format::format_static_post_body(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -196,7 +196,7 @@ impl MatrixApiMcp {
         };
         match self.client.static_post_body_noresp(&req).await {
             Ok(result) => format::format_static_post_body_noresp(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -204,7 +204,7 @@ impl MatrixApiMcp {
     async fn one_path_param(&self, Parameters(input): Parameters<OnePathParamInput>) -> String {
         match self.client.one_path_param(&input.x_id).await {
             Ok(result) => format::format_one_path_param(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -212,7 +212,7 @@ impl MatrixApiMcp {
     async fn two_path_params(&self, Parameters(input): Parameters<TwoPathParamsInput>) -> String {
         match self.client.two_path_params(&input.a_id, &input.b_id).await {
             Ok(result) => format::format_two_path_params(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -223,7 +223,7 @@ impl MatrixApiMcp {
         };
         match self.client.path_param_put_body(&input.x_id, &req).await {
             Ok(result) => format::format_path_param_put_body(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -234,7 +234,7 @@ impl MatrixApiMcp {
         };
         match self.client.path_param_put_noresp(&input.y_id, &req).await {
             Ok(result) => format::format_path_param_put_noresp(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -245,7 +245,7 @@ impl MatrixApiMcp {
         };
         match self.client.path_param_patch_body(&input.x_id, &req).await {
             Ok(result) => format::format_path_param_patch_body(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -256,7 +256,7 @@ impl MatrixApiMcp {
         };
         match self.client.path_param_patch_noresp(&input.z_id, &req).await {
             Ok(result) => format::format_path_param_patch_noresp(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -264,7 +264,7 @@ impl MatrixApiMcp {
     async fn delete_with_resp(&self, Parameters(input): Parameters<DeleteWithRespInput>) -> String {
         match self.client.delete_with_resp(&input.x_id).await {
             Ok(_) => format!("Success: DELETE /x/{xId}"),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -272,7 +272,7 @@ impl MatrixApiMcp {
     async fn delete_no_resp(&self, Parameters(input): Parameters<DeleteNoRespInput>) -> String {
         match self.client.delete_no_resp(&input.y_id).await {
             Ok(_) => format!("Success: DELETE /y/{yId}"),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -280,7 +280,7 @@ impl MatrixApiMcp {
     async fn stop_thing(&self, Parameters(_): Parameters<serde_json::Value>) -> String {
         match self.client.stop_thing().await {
             Ok(_) => format!("Success: POST /stop"),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -288,7 +288,7 @@ impl MatrixApiMcp {
     async fn query_required(&self, Parameters(input): Parameters<QueryRequiredInput>) -> String {
         match self.client.query_required(input.limit).await {
             Ok(result) => format::format_query_required(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -296,7 +296,7 @@ impl MatrixApiMcp {
     async fn query_optional(&self, Parameters(input): Parameters<QueryOptionalInput>) -> String {
         match self.client.query_optional(input.cursor.as_deref()).await {
             Ok(result) => format::format_query_optional(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -304,7 +304,7 @@ impl MatrixApiMcp {
     async fn query_optional_then_required(&self, Parameters(input): Parameters<QueryOptionalThenRequiredInput>) -> String {
         match self.client.query_optional_then_required(input.status.as_deref(), input.limit).await {
             Ok(result) => format::format_query_optional_then_required(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -312,7 +312,7 @@ impl MatrixApiMcp {
     async fn query_non_option_not_required(&self, Parameters(input): Parameters<QueryNonOptionNotRequiredInput>) -> String {
         match self.client.query_non_option_not_required(input.page).await {
             Ok(result) => format::format_query_non_option_not_required(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -320,7 +320,7 @@ impl MatrixApiMcp {
     async fn path_and_query(&self, Parameters(input): Parameters<PathAndQueryInput>) -> String {
         match self.client.path_and_query(&input.u_id, input.page.as_deref()).await {
             Ok(result) => format::format_path_and_query(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 
@@ -331,7 +331,7 @@ impl MatrixApiMcp {
         };
         match self.client.path_query_and_body(&input.u_id, input.dry, &req).await {
             Ok(result) => format::format_path_query_and_body(&result),
-            Err(e) => format!("Error: {e}"),
+            Err(e) => kotae::Answer::blind(e.to_string()).render(),
         }
     }
 

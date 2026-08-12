@@ -62,6 +62,7 @@ path = "src/main.rs"
 anyhow = "1"
 clap = {{ version = "4", features = ["derive"] }}
 heck = "0.5"
+kotae = "0.1"
 reqwest = {{ version = "0.12", features = ["json", "rustls-tls"], default-features = false }}
 rmcp = {{ version = "0.15", features = ["server", "transport-io"] }}
 schemars = "0.8"

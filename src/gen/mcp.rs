@@ -528,9 +528,31 @@ fn tool_method(op: &Operation) -> FnDef {
         }
     };
 
+    // A failed call is BLIND — the tool could not look — not a sentence.
+    //
+    // This emitted `format!("Error: {e}")`, so every generated tool answered a
+    // failure with English prose. The reader of an MCP answer is a model with
+    // no peripheral vision: it has the bytes and nothing else, so "Error:
+    // connection refused" and an empty result set are two prose strings it must
+    // tell apart by reading. kotae gives the answer a discriminant instead, and
+    // `blind` is the honest arm — an HTTP call that did not complete says
+    // nothing about whether the resource exists.
+    //
+    // Deliberately NOT classified finer here. The generator cannot see the
+    // status code without inspecting the error type, and a 404 mapped to
+    // `empty` by guesswork would be exactly the collapse kotae exists to
+    // prevent. Per-operation classification is the consumer's job at the point
+    // it knows its own error shape. `pending-mcp-forge: classify-status-codes`.
     let err_arm = MatchArm {
         pattern: Expr::Call(path(&["Err"]), vec![var("e")]),
-        body: Expr::Format(FormatTemplate::new().lit("Error: ").captured(id("e")), vec![]),
+        body: call(
+            Expr::Call(
+                path(&["kotae", "Answer", "blind"]),
+                vec![call(var("e"), "to_string", vec![])],
+            ),
+            "render",
+            vec![],
+        ),
     };
 
     body.push(Stmt::Match {
@@ -834,7 +856,15 @@ mod tests {
         let op = make_get_op("list_items", "/items");
         let spec = make_spec(vec![op]);
         let code = generate(&spec);
-        assert!(code.contains("Err(e) => format!(\"Error: {e}\")"));
+        // A failed call is a typed BLIND answer, not English prose — the
+        // reader is a model with only the bytes, and "Error: connection
+        // refused" is a sentence it must parse rather than a discriminant
+        // it can branch on.
+        assert!(code.contains("Err(e) => kotae::Answer::blind(e.to_string()).render()"));
+        assert!(
+            !code.contains("format!(\"Error:"),
+            "no generated tool may answer a failure with prose",
+        );
     }
 
     #[test]

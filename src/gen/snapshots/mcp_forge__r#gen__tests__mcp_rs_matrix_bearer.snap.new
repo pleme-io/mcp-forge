@@ -1,5 +1,6 @@
 ---
 source: src/gen/mod.rs
+assertion_line: 859
 expression: code
 ---
 use rmcp::{

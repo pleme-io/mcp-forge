@@ -1,6 +1,7 @@
 ---
 source: src/gen/mod.rs
-expression: code
+assertion_line: 873
+expression: "super::mcp::generate(&spec)"
 ---
 use rmcp::{
     ServerHandler, ServiceExt,
@@ -146,7 +147,7 @@ impl MatrixApiMcp {
         })
     }
 
-    #[tool(description = "static_get summary")]
+    #[tool(description = "static_get operation")]
     async fn static_get(&self, Parameters(_): Parameters<serde_json::Value>) -> String {
         match self.client.static_get().await {
             Ok(result) => format::format_static_get(&result),
@@ -154,7 +155,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "static_get_empty summary")]
+    #[tool(description = "static_get_empty operation")]
     async fn static_get_empty(&self, Parameters(_): Parameters<serde_json::Value>) -> String {
         match self.client.static_get_empty().await {
             Ok(result) => format::format_static_get_empty(&result),
@@ -162,7 +163,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "static_post_nobody summary")]
+    #[tool(description = "static_post_nobody operation")]
     async fn static_post_nobody(&self, Parameters(_): Parameters<serde_json::Value>) -> String {
         match self.client.static_post_nobody().await {
             Ok(result) => format::format_static_post_nobody(&result),
@@ -170,7 +171,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "static_post_nobody_noresp summary")]
+    #[tool(description = "static_post_nobody_noresp operation")]
     async fn static_post_nobody_noresp(&self, Parameters(_): Parameters<serde_json::Value>) -> String {
         match self.client.static_post_nobody_noresp().await {
             Ok(result) => format::format_static_post_nobody_noresp(&result),
@@ -178,7 +179,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "static_post_body summary")]
+    #[tool(description = "static_post_body operation")]
     async fn static_post_body(&self, Parameters(input): Parameters<StaticPostBodyInput>) -> String {
         let req = crate::api::types::MkX {
             name: input.name.clone(),
@@ -189,7 +190,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "static_post_body_noresp summary")]
+    #[tool(description = "static_post_body_noresp operation")]
     async fn static_post_body_noresp(&self, Parameters(input): Parameters<StaticPostBodyNorespInput>) -> String {
         let req = crate::api::types::Notify {
             msg: input.msg.clone(),
@@ -200,7 +201,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "one_path_param summary")]
+    #[tool(description = "one_path_param operation")]
     async fn one_path_param(&self, Parameters(input): Parameters<OnePathParamInput>) -> String {
         match self.client.one_path_param(&input.x_id).await {
             Ok(result) => format::format_one_path_param(&result),
@@ -208,7 +209,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "two_path_params summary")]
+    #[tool(description = "two_path_params operation")]
     async fn two_path_params(&self, Parameters(input): Parameters<TwoPathParamsInput>) -> String {
         match self.client.two_path_params(&input.a_id, &input.b_id).await {
             Ok(result) => format::format_two_path_params(&result),
@@ -216,7 +217,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "path_param_put_body summary")]
+    #[tool(description = "path_param_put_body operation")]
     async fn path_param_put_body(&self, Parameters(input): Parameters<PathParamPutBodyInput>) -> String {
         let req = crate::api::types::UpX {
             name: input.name.clone(),
@@ -227,7 +228,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "path_param_put_noresp summary")]
+    #[tool(description = "path_param_put_noresp operation")]
     async fn path_param_put_noresp(&self, Parameters(input): Parameters<PathParamPutNorespInput>) -> String {
         let req = crate::api::types::UpY {
             name: input.name.clone(),
@@ -238,7 +239,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "path_param_patch_body summary")]
+    #[tool(description = "path_param_patch_body operation")]
     async fn path_param_patch_body(&self, Parameters(input): Parameters<PathParamPatchBodyInput>) -> String {
         let req = crate::api::types::PatchX {
             name: input.name.clone(),
@@ -249,7 +250,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "path_param_patch_noresp summary")]
+    #[tool(description = "path_param_patch_noresp operation")]
     async fn path_param_patch_noresp(&self, Parameters(input): Parameters<PathParamPatchNorespInput>) -> String {
         let req = crate::api::types::PatchZ {
             name: input.name.clone(),
@@ -260,7 +261,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "delete_with_resp summary")]
+    #[tool(description = "delete_with_resp operation")]
     async fn delete_with_resp(&self, Parameters(input): Parameters<DeleteWithRespInput>) -> String {
         match self.client.delete_with_resp(&input.x_id).await {
             Ok(_) => format!("Success: DELETE /x/{xId}"),
@@ -268,7 +269,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "delete_no_resp summary")]
+    #[tool(description = "delete_no_resp operation")]
     async fn delete_no_resp(&self, Parameters(input): Parameters<DeleteNoRespInput>) -> String {
         match self.client.delete_no_resp(&input.y_id).await {
             Ok(_) => format!("Success: DELETE /y/{yId}"),
@@ -276,7 +277,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "stop_thing summary")]
+    #[tool(description = "stop_thing operation")]
     async fn stop_thing(&self, Parameters(_): Parameters<serde_json::Value>) -> String {
         match self.client.stop_thing().await {
             Ok(_) => format!("Success: POST /stop"),
@@ -284,7 +285,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "query_required summary")]
+    #[tool(description = "query_required operation")]
     async fn query_required(&self, Parameters(input): Parameters<QueryRequiredInput>) -> String {
         match self.client.query_required(input.limit).await {
             Ok(result) => format::format_query_required(&result),
@@ -292,7 +293,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "query_optional summary")]
+    #[tool(description = "query_optional operation")]
     async fn query_optional(&self, Parameters(input): Parameters<QueryOptionalInput>) -> String {
         match self.client.query_optional(input.cursor.as_deref()).await {
             Ok(result) => format::format_query_optional(&result),
@@ -300,7 +301,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "query_optional_then_required summary")]
+    #[tool(description = "query_optional_then_required operation")]
     async fn query_optional_then_required(&self, Parameters(input): Parameters<QueryOptionalThenRequiredInput>) -> String {
         match self.client.query_optional_then_required(input.status.as_deref(), input.limit).await {
             Ok(result) => format::format_query_optional_then_required(&result),
@@ -308,7 +309,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "query_non_option_not_required summary")]
+    #[tool(description = "query_non_option_not_required operation")]
     async fn query_non_option_not_required(&self, Parameters(input): Parameters<QueryNonOptionNotRequiredInput>) -> String {
         match self.client.query_non_option_not_required(input.page).await {
             Ok(result) => format::format_query_non_option_not_required(&result),
@@ -316,7 +317,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "path_and_query summary")]
+    #[tool(description = "path_and_query operation")]
     async fn path_and_query(&self, Parameters(input): Parameters<PathAndQueryInput>) -> String {
         match self.client.path_and_query(&input.u_id, input.page.as_deref()).await {
             Ok(result) => format::format_path_and_query(&result),
@@ -324,7 +325,7 @@ impl MatrixApiMcp {
         }
     }
 
-    #[tool(description = "path_query_and_body summary")]
+    #[tool(description = "path_query_and_body operation")]
     async fn path_query_and_body(&self, Parameters(input): Parameters<PathQueryAndBodyInput>) -> String {
         let req = crate::api::types::MkR {
             name: input.name.clone(),
@@ -342,7 +343,7 @@ impl ServerHandler for MatrixApiMcp {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some(
-                "He said \"hi\"\\then left"
+                "matrix_api MCP server"
                     .into(),
             ),
             capabilities: ServerCapabilities::builder().enable_tools().build(),

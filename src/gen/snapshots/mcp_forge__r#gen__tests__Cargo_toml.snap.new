@@ -1,5 +1,6 @@
 ---
 source: src/gen/mod.rs
+assertion_line: 680
 expression: content
 ---
 [package]
