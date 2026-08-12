@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "16b0f4264196e882a928a3a5bcc93de0d245112566af604bd80c06d3c9801e9e",
+  "cargo_lock_sha256": "f19e9ee2635486506ee4d07621cb4a768b0e55c8d2de6010b7319288aa1846d4",
   "manifest_sha256": {
-    "Cargo.toml": "ca3b278b4961f569a44b14f213b0b7855532ec25dd7149c6db2244a70c1c8439"
+    "Cargo.toml": "95ccd42c96e9dd633b4dabeb7ae2c0257812703ddfa97d60b04172eb250a0d02"
   },
   "target_resolves": {
     "base": {
@@ -600,7 +600,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "mcp-forge-0.1.2": {
+      "mcp-forge-0.1.3": {
         "runtime_dependencies": [
           {
             "name": "anyhow",
@@ -884,7 +884,7 @@
           },
           {
             "name": "thiserror",
-            "package_key": "thiserror-2.0.19",
+            "package_key": "thiserror-2.0.20",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1266,11 +1266,11 @@
           "getrandom"
         ]
       },
-      "thiserror-2.0.19": {
+      "thiserror-2.0.20": {
         "runtime_dependencies": [
           {
             "name": "thiserror_impl",
-            "package_key": "thiserror-impl-2.0.19",
+            "package_key": "thiserror-impl-2.0.20",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1285,7 +1285,7 @@
           "std"
         ]
       },
-      "thiserror-impl-2.0.19": {
+      "thiserror-impl-2.0.20": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -2436,7 +2436,7 @@
     "matchers-0.2.0": {
       "edition": "2018"
     },
-    "mcp-forge-0.1.2": {
+    "mcp-forge-0.1.3": {
       "edition": "2024",
       "binaries": [
         {
@@ -2524,11 +2524,11 @@
     "tempfile-3.27.0": {
       "edition": "2021"
     },
-    "thiserror-2.0.19": {
+    "thiserror-2.0.20": {
       "edition": "2021",
       "build_script": "build.rs"
     },
-    "thiserror-impl-2.0.19": {
+    "thiserror-impl-2.0.20": {
       "edition": "2021",
       "proc_macro": true
     },
