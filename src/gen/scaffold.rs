@@ -63,6 +63,7 @@ anyhow = "1"
 clap = {{ version = "4", features = ["derive"] }}
 heck = "0.5"
 kotae = "0.1"
+okiba = "0.2"
 reqwest = {{ version = "0.12", features = ["json", "rustls-tls"], default-features = false }}
 rmcp = {{ version = "0.15", features = ["server", "transport-io"] }}
 schemars = "0.8"
@@ -215,10 +216,16 @@ pub struct {config_type} {{
 
 impl Default for {config_type} {{
     fn default() -> Self {{
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
         Self {{
             api_url: "{base_url}".into(),
-            api_key_file: PathBuf::from(&home).join(".config/{app_name}/api-key"),
+            // okiba resolves $XDG_CONFIG_HOME then ~/.config, and IGNORES a
+            // relative override per spec rather than joining it. This used to
+            // be PathBuf::from($HOME) with a "/tmp" fallback, so an empty or
+            // relative HOME put the API KEY FILE in the process's cwd.
+            api_key_file: okiba::Okiba::for_app("{app_name}").path(
+                okiba::Tier::Config,
+                "api-key",
+            ),
         }}
     }}
 }}
@@ -231,15 +238,22 @@ impl {config_type} {{
         // 3. ~/.config/{app_name}/{app_name}.yaml
         // 4. Defaults
 
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-
+        // Every candidate is ABSOLUTE or it is not a candidate. All three arms
+        // used to take their variable verbatim, so a relative $XDG_CONFIG_HOME
+        // or $HOME made a candidate resolve against the cwd — a server started
+        // inside a repo could load configuration out of that repo.
         let candidates: Vec<PathBuf> = [
             // Nix module sets this for MCP server processes that lack user env
-            std::env::var("{app_upper}_CONFIG").map(PathBuf::from).ok(),
-            std::env::var("XDG_CONFIG_HOME")
-                .map(|x| PathBuf::from(x).join("{app_name}/{app_name}.yaml"))
-                .ok(),
-            Some(PathBuf::from(&home).join(".config/{app_name}/{app_name}.yaml")),
+            std::env::var("{app_upper}_CONFIG")
+                .ok()
+                .map(PathBuf::from)
+                .filter(|p| p.is_absolute()),
+            // One okiba call for what were two arms: $XDG_CONFIG_HOME then
+            // ~/.config, same resulting path, absolute by construction.
+            Some(okiba::Okiba::for_app("{app_name}").path(
+                okiba::Tier::Config,
+                "{app_name}.yaml",
+            )),
         ]
         .into_iter()
         .flatten()

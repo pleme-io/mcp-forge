@@ -14,10 +14,16 @@ pub struct PetStoreConfig {
 
 impl Default for PetStoreConfig {
     fn default() -> Self {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
         Self {
             api_url: "https://api.petstore.example.com/v2".into(),
-            api_key_file: PathBuf::from(&home).join(".config/pet_store/api-key"),
+            // okiba resolves $XDG_CONFIG_HOME then ~/.config, and IGNORES a
+            // relative override per spec rather than joining it. This used to
+            // be PathBuf::from($HOME) with a "/tmp" fallback, so an empty or
+            // relative HOME put the API KEY FILE in the process's cwd.
+            api_key_file: okiba::Okiba::for_app("pet_store").path(
+                okiba::Tier::Config,
+                "api-key",
+            ),
         }
     }
 }
@@ -30,15 +36,22 @@ impl PetStoreConfig {
         // 3. ~/.config/pet_store/pet_store.yaml
         // 4. Defaults
 
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-
+        // Every candidate is ABSOLUTE or it is not a candidate. All three arms
+        // used to take their variable verbatim, so a relative $XDG_CONFIG_HOME
+        // or $HOME made a candidate resolve against the cwd — a server started
+        // inside a repo could load configuration out of that repo.
         let candidates: Vec<PathBuf> = [
             // Nix module sets this for MCP server processes that lack user env
-            std::env::var("PET_STORE_CONFIG").map(PathBuf::from).ok(),
-            std::env::var("XDG_CONFIG_HOME")
-                .map(|x| PathBuf::from(x).join("pet_store/pet_store.yaml"))
-                .ok(),
-            Some(PathBuf::from(&home).join(".config/pet_store/pet_store.yaml")),
+            std::env::var("PET_STORE_CONFIG")
+                .ok()
+                .map(PathBuf::from)
+                .filter(|p| p.is_absolute()),
+            // One okiba call for what were two arms: $XDG_CONFIG_HOME then
+            // ~/.config, same resulting path, absolute by construction.
+            Some(okiba::Okiba::for_app("pet_store").path(
+                okiba::Tier::Config,
+                "pet_store.yaml",
+            )),
         ]
         .into_iter()
         .flatten()
