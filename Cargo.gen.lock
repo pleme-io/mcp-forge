@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "f19e9ee2635486506ee4d07621cb4a768b0e55c8d2de6010b7319288aa1846d4",
+  "cargo_lock_sha256": "6337360a2085651f3f2c5925419a5a9ec0d6e5dfdc765fe33a345d3332a26b15",
   "manifest_sha256": {
-    "Cargo.toml": "95ccd42c96e9dd633b4dabeb7ae2c0257812703ddfa97d60b04172eb250a0d02"
+    "Cargo.toml": "fc9746c00087cc76aebf007af6b20f2066fe453fd6f5b7ceec913cbbca3b2689"
   },
   "target_resolves": {
     "base": {
@@ -600,7 +600,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "mcp-forge-0.1.3": {
+      "mcp-forge-0.1.4": {
         "runtime_dependencies": [
           {
             "name": "anyhow",
@@ -2436,7 +2436,7 @@
     "matchers-0.2.0": {
       "edition": "2018"
     },
-    "mcp-forge-0.1.3": {
+    "mcp-forge-0.1.4": {
       "edition": "2024",
       "binaries": [
         {
