@@ -97,7 +97,11 @@ impl Operation {
     /// the body schema, or a fallback of `{OperationId}Request` in PascalCase.
     #[must_use]
     pub fn request_body_type_name(&self) -> String {
-        if let Some(name) = self.request_body.as_ref().and_then(|b| b.type_name.as_ref()) {
+        if let Some(name) = self
+            .request_body
+            .as_ref()
+            .and_then(|b| b.type_name.as_ref())
+        {
             return name.clone();
         }
         format!("{}Request", self.id.to_upper_camel_case())
@@ -454,11 +458,7 @@ impl<'a> Converter<'a> {
 
     /// Convert an `OpenAPI` Schema to a `RustType`, optionally creating named
     /// sub-types for inline objects.
-    fn schema_to_rust_type(
-        &mut self,
-        schema: &Schema,
-        context_name: Option<&str>,
-    ) -> RustType {
+    fn schema_to_rust_type(&mut self, schema: &Schema, context_name: Option<&str>) -> RustType {
         // Handle $ref first.
         if let Some(ref_path) = &schema.ref_path {
             let name = spec::ref_name(ref_path);
@@ -521,12 +521,9 @@ impl<'a> Converter<'a> {
             Some("number") => RustType::F64,
             Some("boolean") => RustType::Bool,
             Some("array") => {
-                let inner = schema
-                    .items
-                    .as_ref()
-                    .map_or(RustType::Value, |s| {
-                        self.schema_to_rust_type(s, context_name)
-                    });
+                let inner = schema.items.as_ref().map_or(RustType::Value, |s| {
+                    self.schema_to_rust_type(s, context_name)
+                });
                 RustType::Vec(Box::new(inner))
             }
             Some("object") => {
@@ -590,7 +587,11 @@ impl<'a> Converter<'a> {
             .operation_id
             .clone()
             .unwrap_or_else(|| {
-                format!("{}_{}", format!("{method}").to_lowercase(), path.replace('/', "_"))
+                format!(
+                    "{}_{}",
+                    format!("{method}").to_lowercase(),
+                    path.replace('/', "_")
+                )
             })
             .to_snake_case();
 
@@ -652,12 +653,9 @@ impl<'a> Converter<'a> {
             _ => ParamLocation::Query,
         };
 
-        let mut rust_type = param
-            .schema
-            .as_ref()
-            .map_or(RustType::String, |s| {
-                self.schema_to_rust_type(s, Some(&param.name))
-            });
+        let mut rust_type = param.schema.as_ref().map_or(RustType::String, |s| {
+            self.schema_to_rust_type(s, Some(&param.name))
+        });
 
         // Path params are always required.
         let required = param.required || location == ParamLocation::Path;
@@ -684,9 +682,7 @@ impl<'a> Converter<'a> {
         let b = body?;
 
         let body = if let Some(ref_path) = &b.ref_path {
-            self.spec
-                .resolve_request_body_ref(ref_path)
-                .cloned()?
+            self.spec.resolve_request_body_ref(ref_path).cloned()?
         } else {
             b.clone()
         };
@@ -889,10 +885,7 @@ components:
         let api = parse_ir(PETSTORE_YAML);
         assert_eq!(api.name, "Pet Store");
         assert_eq!(api.version, "2.0.0");
-        assert_eq!(
-            api.description.as_deref(),
-            Some("A sample pet store API")
-        );
+        assert_eq!(api.description.as_deref(), Some("A sample pet store API"));
     }
 
     #[test]
@@ -1017,28 +1010,45 @@ paths: {}
 
         let tag_field = pet.fields.iter().find(|f| f.rust_name == "tag").unwrap();
         assert!(!tag_field.required);
-        assert_eq!(tag_field.rust_type, RustType::Option(Box::new(RustType::String)));
+        assert_eq!(
+            tag_field.rust_type,
+            RustType::Option(Box::new(RustType::String))
+        );
     }
 
     #[test]
     fn enum_type_is_detected() {
         let api = parse_ir(PETSTORE_YAML);
-        let status = api.types.iter().find(|t| t.rust_name == "PetStatus").unwrap();
+        let status = api
+            .types
+            .iter()
+            .find(|t| t.rust_name == "PetStatus")
+            .unwrap();
         assert!(status.is_enum);
         assert!(status.fields.is_empty());
         assert_eq!(status.enum_variants.len(), 3);
 
-        let variant_names: Vec<&str> =
-            status.enum_variants.iter().map(|v| v.name.as_str()).collect();
+        let variant_names: Vec<&str> = status
+            .enum_variants
+            .iter()
+            .map(|v| v.name.as_str())
+            .collect();
         assert_eq!(variant_names, vec!["available", "pending", "sold"]);
     }
 
     #[test]
     fn enum_variant_rust_names() {
         let api = parse_ir(PETSTORE_YAML);
-        let status = api.types.iter().find(|t| t.rust_name == "PetStatus").unwrap();
-        let rust_names: Vec<&str> =
-            status.enum_variants.iter().map(|v| v.rust_name.as_str()).collect();
+        let status = api
+            .types
+            .iter()
+            .find(|t| t.rust_name == "PetStatus")
+            .unwrap();
+        let rust_names: Vec<&str> = status
+            .enum_variants
+            .iter()
+            .map(|v| v.rust_name.as_str())
+            .collect();
         assert_eq!(rust_names, vec!["Available", "Pending", "Sold"]);
     }
 
@@ -1078,9 +1088,17 @@ paths: {}
         let api = parse_ir(PETSTORE_YAML);
         let list = api.operations.iter().find(|o| o.id == "list_pets").unwrap();
         assert_eq!(list.method, HttpMethod::Get);
-        let create = api.operations.iter().find(|o| o.id == "create_pet").unwrap();
+        let create = api
+            .operations
+            .iter()
+            .find(|o| o.id == "create_pet")
+            .unwrap();
         assert_eq!(create.method, HttpMethod::Post);
-        let delete = api.operations.iter().find(|o| o.id == "delete_pet").unwrap();
+        let delete = api
+            .operations
+            .iter()
+            .find(|o| o.id == "delete_pet")
+            .unwrap();
         assert_eq!(delete.method, HttpMethod::Delete);
     }
 
@@ -1127,7 +1145,11 @@ paths: {}
     #[test]
     fn operation_request_body() {
         let api = parse_ir(PETSTORE_YAML);
-        let create = api.operations.iter().find(|o| o.id == "create_pet").unwrap();
+        let create = api
+            .operations
+            .iter()
+            .find(|o| o.id == "create_pet")
+            .unwrap();
         let body = create.request_body.as_ref().unwrap();
         assert!(body.required);
         assert_eq!(body.type_name.as_deref(), Some("CreatePetRequest"));
@@ -1145,10 +1167,7 @@ paths: {}
     fn operation_response_type() {
         let api = parse_ir(PETSTORE_YAML);
         let get = api.operations.iter().find(|o| o.id == "get_pet").unwrap();
-        assert_eq!(
-            get.response_type,
-            Some(RustType::Named("Pet".into()))
-        );
+        assert_eq!(get.response_type, Some(RustType::Named("Pet".into())));
     }
 
     #[test]
@@ -1164,7 +1183,11 @@ paths: {}
     #[test]
     fn operation_no_response_type_for_204() {
         let api = parse_ir(PETSTORE_YAML);
-        let delete = api.operations.iter().find(|o| o.id == "delete_pet").unwrap();
+        let delete = api
+            .operations
+            .iter()
+            .find(|o| o.id == "delete_pet")
+            .unwrap();
         // 204 has no content, so response_type should be None
         assert!(delete.response_type.is_none());
     }
@@ -1175,10 +1198,7 @@ paths: {}
         let get = api.operations.iter().find(|o| o.id == "get_pet").unwrap();
         assert_eq!(get.errors.len(), 1);
         assert_eq!(get.errors[0].status_code, "404");
-        assert_eq!(
-            get.errors[0].description.as_deref(),
-            Some("Pet not found")
-        );
+        assert_eq!(get.errors[0].description.as_deref(), Some("Pet not found"));
     }
 
     // -- HttpMethod Display --
@@ -1337,15 +1357,30 @@ components:
               type: string
 "##;
         let api = parse_ir(yaml);
-        let extended = api.types.iter().find(|t| t.rust_name == "Extended").unwrap();
-        let field_names: Vec<&str> =
-            extended.fields.iter().map(|f| f.rust_name.as_str()).collect();
+        let extended = api
+            .types
+            .iter()
+            .find(|t| t.rust_name == "Extended")
+            .unwrap();
+        let field_names: Vec<&str> = extended
+            .fields
+            .iter()
+            .map(|f| f.rust_name.as_str())
+            .collect();
         assert!(field_names.contains(&"id"));
         assert!(field_names.contains(&"extra"));
 
-        let id = extended.fields.iter().find(|f| f.rust_name == "id").unwrap();
+        let id = extended
+            .fields
+            .iter()
+            .find(|f| f.rust_name == "id")
+            .unwrap();
         assert!(id.required);
-        let extra = extended.fields.iter().find(|f| f.rust_name == "extra").unwrap();
+        let extra = extended
+            .fields
+            .iter()
+            .find(|f| f.rust_name == "extra")
+            .unwrap();
         assert!(extra.required);
     }
 
@@ -1404,7 +1439,11 @@ paths:
           description: created
 "#;
         let api = parse_ir(yaml);
-        let create = api.operations.iter().find(|o| o.id == "create_item").unwrap();
+        let create = api
+            .operations
+            .iter()
+            .find(|o| o.id == "create_item")
+            .unwrap();
         let body = create.request_body.as_ref().unwrap();
         // An inline body should get a generated type name
         assert!(body.type_name.is_some());
@@ -1495,7 +1534,10 @@ paths:
         let param = &api.operations[0].parameters[0];
         assert_eq!(param.location, ParamLocation::Header);
         assert!(!param.required);
-        assert_eq!(param.rust_type, RustType::Option(Box::new(RustType::String)));
+        assert_eq!(
+            param.rust_type,
+            RustType::Option(Box::new(RustType::String))
+        );
     }
 
     // -- oneOf / anyOf fallback to Value --
@@ -1545,8 +1587,16 @@ components:
         - payload
 "##;
         let api = parse_ir(yaml);
-        let flex = api.types.iter().find(|t| t.rust_name == "Flexible").unwrap();
-        let payload = flex.fields.iter().find(|f| f.rust_name == "payload").unwrap();
+        let flex = api
+            .types
+            .iter()
+            .find(|t| t.rust_name == "Flexible")
+            .unwrap();
+        let payload = flex
+            .fields
+            .iter()
+            .find(|f| f.rust_name == "payload")
+            .unwrap();
         assert_eq!(payload.rust_type, RustType::Value);
     }
 
@@ -1570,8 +1620,16 @@ components:
           type: array
 "##;
         let api = parse_ir(yaml);
-        let container = api.types.iter().find(|t| t.rust_name == "Container").unwrap();
-        let things = container.fields.iter().find(|f| f.rust_name == "things").unwrap();
+        let container = api
+            .types
+            .iter()
+            .find(|t| t.rust_name == "Container")
+            .unwrap();
+        let things = container
+            .fields
+            .iter()
+            .find(|f| f.rust_name == "things")
+            .unwrap();
         assert_eq!(things.rust_type, RustType::Vec(Box::new(RustType::Value)));
     }
 
@@ -1600,10 +1658,18 @@ components:
 "##;
         let api = parse_ir(yaml);
         let task = api.types.iter().find(|t| t.rust_name == "Task").unwrap();
-        let prio_field = task.fields.iter().find(|f| f.rust_name == "priority").unwrap();
+        let prio_field = task
+            .fields
+            .iter()
+            .find(|f| f.rust_name == "priority")
+            .unwrap();
         assert!(matches!(prio_field.rust_type, RustType::Named(_)));
 
-        let prio_type = api.types.iter().find(|t| t.rust_name == "Priority").unwrap();
+        let prio_type = api
+            .types
+            .iter()
+            .find(|t| t.rust_name == "Priority")
+            .unwrap();
         assert!(prio_type.is_enum);
         assert_eq!(prio_type.enum_variants.len(), 3);
     }
@@ -1625,7 +1691,11 @@ components:
         type: string
 "##;
         let api = parse_ir(yaml);
-        let meta = api.types.iter().find(|t| t.rust_name == "Metadata").unwrap();
+        let meta = api
+            .types
+            .iter()
+            .find(|t| t.rust_name == "Metadata")
+            .unwrap();
         assert!(meta.fields.is_empty());
     }
 
@@ -1648,9 +1718,17 @@ components:
         - name
 "##;
         let api = parse_ir(yaml);
-        let implicit = api.types.iter().find(|t| t.rust_name == "Implicit").unwrap();
+        let implicit = api
+            .types
+            .iter()
+            .find(|t| t.rust_name == "Implicit")
+            .unwrap();
         assert!(!implicit.fields.is_empty());
-        let name_field = implicit.fields.iter().find(|f| f.rust_name == "name").unwrap();
+        let name_field = implicit
+            .fields
+            .iter()
+            .find(|f| f.rust_name == "name")
+            .unwrap();
         assert_eq!(name_field.rust_type, RustType::String);
     }
 
@@ -1759,9 +1837,16 @@ paths:
           description: ok
 "#;
         let api = parse_ir(yaml);
-        let op = api.operations.iter().find(|o| o.id == "list_items").unwrap();
+        let op = api
+            .operations
+            .iter()
+            .find(|o| o.id == "list_items")
+            .unwrap();
         let page = op.parameters.iter().find(|p| p.name == "page").unwrap();
-        assert!(page.required, "op-level param should override path-level required=false");
+        assert!(
+            page.required,
+            "op-level param should override path-level required=false"
+        );
     }
 
     // -- Multiple 2xx responses: picks first in priority order --
@@ -1803,7 +1888,11 @@ components:
           type: integer
 "##;
         let api = parse_ir(yaml);
-        let op = api.operations.iter().find(|o| o.id == "create_item").unwrap();
+        let op = api
+            .operations
+            .iter()
+            .find(|o| o.id == "create_item")
+            .unwrap();
         assert_eq!(op.response_type, Some(RustType::Named("Item".into())));
     }
 
@@ -1835,7 +1924,11 @@ paths:
           description: created
 "#;
         let api = parse_ir(yaml);
-        let op = api.operations.iter().find(|o| o.id == "create_item").unwrap();
+        let op = api
+            .operations
+            .iter()
+            .find(|o| o.id == "create_item")
+            .unwrap();
         let body = op.request_body.as_ref().unwrap();
         assert!(!body.fields.is_empty());
     }
@@ -1866,7 +1959,11 @@ paths:
           description: ok
 "#;
         let api = parse_ir(yaml);
-        let op = api.operations.iter().find(|o| o.id == "upload_file").unwrap();
+        let op = api
+            .operations
+            .iter()
+            .find(|o| o.id == "upload_file")
+            .unwrap();
         assert!(op.request_body.is_none());
     }
 
@@ -1895,7 +1992,10 @@ paths:
         let api = parse_ir(yaml);
         let op = api.operations.iter().find(|o| o.id == "get_item").unwrap();
         let id_param = op.parameters.iter().find(|p| p.name == "id").unwrap();
-        assert!(id_param.required, "path params must always be required even if spec says false");
+        assert!(
+            id_param.required,
+            "path params must always be required even if spec says false"
+        );
         assert_eq!(id_param.rust_type, RustType::String);
     }
 
@@ -1922,7 +2022,11 @@ paths:
           description: ok
 "#;
         let api = parse_ir(yaml);
-        let op = api.operations.iter().find(|o| o.id == "patch_item").unwrap();
+        let op = api
+            .operations
+            .iter()
+            .find(|o| o.id == "patch_item")
+            .unwrap();
         assert_eq!(op.method, HttpMethod::Patch);
     }
 
@@ -1949,7 +2053,11 @@ paths:
           description: No content
 "#;
         let api = parse_ir(yaml);
-        let op = api.operations.iter().find(|o| o.id == "delete_item").unwrap();
+        let op = api
+            .operations
+            .iter()
+            .find(|o| o.id == "delete_item")
+            .unwrap();
         assert!(op.response_type.is_none());
     }
 
@@ -2059,9 +2167,17 @@ components:
 "##;
         let api = parse_ir(yaml);
         let config = api.types.iter().find(|t| t.rust_name == "Config").unwrap();
-        let retries = config.fields.iter().find(|f| f.rust_name == "retries").unwrap();
+        let retries = config
+            .fields
+            .iter()
+            .find(|f| f.rust_name == "retries")
+            .unwrap();
         assert_eq!(retries.default_value, Some(serde_json::json!(3)));
-        let mode = config.fields.iter().find(|f| f.rust_name == "mode").unwrap();
+        let mode = config
+            .fields
+            .iter()
+            .find(|f| f.rust_name == "mode")
+            .unwrap();
         assert_eq!(mode.default_value, Some(serde_json::json!("auto")));
     }
 
@@ -2146,7 +2262,11 @@ components:
 "##;
         let api = parse_ir(yaml);
         let wrapper = api.types.iter().find(|t| t.rust_name == "Wrapper").unwrap();
-        let nested = wrapper.fields.iter().find(|f| f.rust_name == "nested").unwrap();
+        let nested = wrapper
+            .fields
+            .iter()
+            .find(|f| f.rust_name == "nested")
+            .unwrap();
         assert!(matches!(nested.rust_type, RustType::Named(_)));
     }
 
@@ -2382,7 +2502,10 @@ components:
       name: X-Key
 "#;
         let api = parse_ir(yaml);
-        assert!(matches!(api.auth, AuthMethod::Bearer | AuthMethod::ApiKeyHeader(_)));
+        assert!(matches!(
+            api.auth,
+            AuthMethod::Bearer | AuthMethod::ApiKeyHeader(_)
+        ));
     }
 
     // -- Deeply nested allOf --

@@ -55,7 +55,11 @@ pub struct InvalidIdent {
 
 impl std::fmt::Display for InvalidIdent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "invalid Rust identifier {:?}: {}", self.text, self.reason)
+        write!(
+            f,
+            "invalid Rust identifier {:?}: {}",
+            self.text, self.reason
+        )
     }
 }
 
@@ -77,14 +81,19 @@ impl Ident {
     /// Returns [`InvalidIdent`] if `text` is empty, starts with a digit, or
     /// contains a character outside `[A-Za-z0-9_]`.
     pub fn new(text: &str) -> Result<Self, InvalidIdent> {
-        let invalid = |reason| InvalidIdent { text: text.to_string(), reason };
+        let invalid = |reason| InvalidIdent {
+            text: text.to_string(),
+            reason,
+        };
 
         let mut chars = text.chars();
         let Some(first) = chars.next() else {
             return Err(invalid("identifiers cannot be empty"));
         };
         if !(first.is_ascii_alphabetic() || first == '_') {
-            return Err(invalid("identifiers must start with a letter or underscore"));
+            return Err(invalid(
+                "identifiers must start with a letter or underscore",
+            ));
         }
         if let Some(bad) = chars.find(|c| !(c.is_ascii_alphanumeric() || *c == '_')) {
             return Err(match bad {
@@ -121,7 +130,11 @@ impl Path {
                 reason: "a path needs at least one segment",
             });
         }
-        segments.iter().map(|s| Ident::new(s)).collect::<Result<Vec<_>, _>>().map(Self)
+        segments
+            .iter()
+            .map(|s| Ident::new(s))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Self)
     }
 
     /// A single-segment path.
@@ -160,13 +173,19 @@ impl StrLit {
     /// A literal that preserves its value exactly, escaping newlines as `\n`.
     #[must_use]
     pub fn new(value: impl Into<String>) -> Self {
-        Self { value: value.into(), one_line: false }
+        Self {
+            value: value.into(),
+            one_line: false,
+        }
     }
 
     /// A literal for single-line attribute position: newlines become spaces.
     #[must_use]
     pub fn one_line(value: impl Into<String>) -> Self {
-        Self { value: value.into(), one_line: true }
+        Self {
+            value: value.into(),
+            one_line: true,
+        }
     }
 
     /// Render as a Rust string literal, quotes included.
@@ -412,13 +431,24 @@ pub enum Expr {
     /// `receiver.name(args)`, rendered inline.
     MethodCall(Box<Expr>, Ident, Vec<Expr>),
     /// A method chain broken across lines, one link per line.
-    Chain { receiver: Box<Expr>, links: Vec<ChainLink> },
+    Chain {
+        receiver: Box<Expr>,
+        links: Vec<ChainLink>,
+    },
     /// `Path { fields }`.
-    StructLit { path: Path, fields: Vec<FieldInit>, braces: Braces },
+    StructLit {
+        path: Path,
+        fields: Vec<FieldInit>,
+        braces: Braces,
+    },
     /// `format!(template, args)`.
     Format(FormatTemplate, Vec<Expr>),
     /// `if cond { a } else { b }`, rendered inline.
-    IfElseInline { cond: Box<Expr>, then: Box<Expr>, otherwise: Box<Expr> },
+    IfElseInline {
+        cond: Box<Expr>,
+        then: Box<Expr>,
+        otherwise: Box<Expr>,
+    },
     /// `|param| body`.
     Closure(Ident, Box<Expr>),
     /// A call whose single argument sits on its own line, with a trailing
@@ -430,7 +460,11 @@ pub enum Expr {
     ///
     /// The type argument is a [`TypeExpr`], not text, so the turbofish cannot
     /// be spelled with something that is not a type.
-    Turbofish { base: Path, ty: Box<TypeExpr>, member: Ident },
+    Turbofish {
+        base: Path,
+        ty: Box<TypeExpr>,
+        member: Ident,
+    },
 }
 
 impl Expr {
@@ -518,7 +552,11 @@ impl Expr {
                     }
                 }
             }
-            Self::StructLit { path, fields, braces } => {
+            Self::StructLit {
+                path,
+                fields,
+                braces,
+            } => {
                 render_path(path, out);
                 match braces {
                     Braces::Inline => {
@@ -554,7 +592,11 @@ impl Expr {
                 }
                 out.push(')');
             }
-            Self::IfElseInline { cond, then, otherwise } => {
+            Self::IfElseInline {
+                cond,
+                then,
+                otherwise,
+            } => {
                 out.push_str("if ");
                 cond.render(out, indent);
                 out.push_str(" { ");
@@ -638,7 +680,12 @@ pub struct MatchArm {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Stmt {
     /// `let [mut] name[: Ty] = init;`
-    Let { name: Ident, mutable: bool, ty: Option<TypeExpr>, init: Expr },
+    Let {
+        name: Ident,
+        mutable: bool,
+        ty: Option<TypeExpr>,
+        init: Expr,
+    },
     /// `let name =` followed by the initialiser on the next line, indented.
     LetWrapped { name: Ident, init: Expr },
     /// `lhs = rhs;`
@@ -654,16 +701,28 @@ pub enum Stmt {
     /// `if cond { … }`
     If { cond: Expr, then: Block },
     /// `if let Some(ref name) = scrutinee { … }`
-    IfLetSomeRef { name: Ident, scrutinee: Expr, then: Block },
+    IfLetSomeRef {
+        name: Ident,
+        scrutinee: Expr,
+        then: Block,
+    },
     /// `match scrutinee { arms }`
-    Match { scrutinee: Expr, arms: Vec<MatchArm> },
+    Match {
+        scrutinee: Expr,
+        arms: Vec<MatchArm>,
+    },
 }
 
 impl Stmt {
     fn render(&self, out: &mut String, indent: usize) {
         match self {
             Self::Blank => {}
-            Self::Let { name, mutable, ty, init } => {
+            Self::Let {
+                name,
+                mutable,
+                ty,
+                init,
+            } => {
                 out.push_str("let ");
                 if *mutable {
                     out.push_str("mut ");
@@ -709,7 +768,11 @@ impl Stmt {
                 newline(out, indent);
                 out.push('}');
             }
-            Self::IfLetSomeRef { name, scrutinee, then } => {
+            Self::IfLetSomeRef {
+                name,
+                scrutinee,
+                then,
+            } => {
                 out.push_str("if let Some(ref ");
                 out.push_str(name.as_str());
                 out.push_str(") = ");
@@ -819,7 +882,11 @@ pub enum Attr {
     /// `#[name(a, b, c)]`, e.g. `#[derive(Debug, Clone)]`.
     List(Ident, Vec<Path>),
     /// `#[name(key = "value")]`, e.g. `#[schemars(description = "…")]`.
-    KeyValue { name: Path, key: Ident, value: StrLit },
+    KeyValue {
+        name: Path,
+        key: Ident,
+        value: StrLit,
+    },
 }
 
 impl Attr {
@@ -926,9 +993,16 @@ impl UseTree {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Item {
     /// `use path::{a, b};` — `leaves` empty means `use path;`.
-    Use { path: Path, leaves: Vec<Path>, glob: bool },
+    Use {
+        path: Path,
+        leaves: Vec<Path>,
+        glob: bool,
+    },
     /// A `use` whose group is broken across lines, one `lines` entry per line.
-    UseLines { path: Path, lines: Vec<Vec<UseTree>> },
+    UseLines {
+        path: Path,
+        lines: Vec<Vec<UseTree>>,
+    },
     Struct(StructDef),
     Impl(ImplBlock),
     Fn(FnDef),
@@ -1194,7 +1268,10 @@ mod tests {
     #[test]
     fn accepts_ordinary_identifiers() {
         for good in ["x", "_x", "snake_case", "Pascal", "a1", "_", "T"] {
-            assert!(Ident::new(good).is_ok(), "{good} should be a valid identifier");
+            assert!(
+                Ident::new(good).is_ok(),
+                "{good} should be a valid identifier"
+            );
         }
     }
 
@@ -1241,20 +1318,29 @@ mod tests {
 
     #[test]
     fn one_line_still_escapes_quotes() {
-        assert_eq!(rendered(&StrLit::one_line(r#"say "hi"\ok"#)), r#""say \"hi\"\\ok""#);
+        assert_eq!(
+            rendered(&StrLit::one_line(r#"say "hi"\ok"#)),
+            r#""say \"hi\"\\ok""#
+        );
     }
 
     // -- format! templates --
 
     #[test]
     fn positional_hole_renders_empty_braces() {
-        assert_eq!(FormatTemplate::new().lit("limit=").hole().text(), "limit={}");
+        assert_eq!(
+            FormatTemplate::new().lit("limit=").hole().text(),
+            "limit={}"
+        );
     }
 
     #[test]
     fn captured_hole_renders_its_name() {
         assert_eq!(
-            FormatTemplate::new().lit("/items/").captured(id("item_id")).text(),
+            FormatTemplate::new()
+                .lit("/items/")
+                .captured(id("item_id"))
+                .text(),
             "/items/{item_id}"
         );
     }
@@ -1294,7 +1380,11 @@ mod tests {
         for rt in variants {
             let mut out = String::new();
             TypeExpr::Ir(rt.clone()).render(&mut out);
-            assert_eq!(out, rt.to_string(), "TypeExpr drifted from RustType::Display");
+            assert_eq!(
+                out,
+                rt.to_string(),
+                "TypeExpr drifted from RustType::Display"
+            );
         }
     }
 
@@ -1327,10 +1417,7 @@ mod tests {
     fn renders_a_wrapped_chain_one_link_per_line() {
         let e = Expr::Chain {
             receiver: Box::new(Expr::var("self").unwrap()),
-            links: vec![
-                ChainLink::Call(id("inner"), vec![]),
-                ChainLink::Await,
-            ],
+            links: vec![ChainLink::Call(id("inner"), vec![]), ChainLink::Await],
         };
         assert_eq!(expr_text(&e), "self\n    .inner()\n    .await");
     }
@@ -1405,7 +1492,10 @@ mod tests {
     fn renders_a_struct_with_attrs_and_doc() {
         let item = Item::Struct(StructDef {
             doc: Doc(vec!["A widget.".into()]),
-            attrs: vec![Attr::List(id("derive"), vec![path(&["Debug"]), path(&["Clone"])])],
+            attrs: vec![Attr::List(
+                id("derive"),
+                vec![path(&["Debug"]), path(&["Clone"])],
+            )],
             public: true,
             name: id("Widget"),
             fields: vec![FieldDecl {
@@ -1432,7 +1522,10 @@ mod tests {
             leaves: vec![path(&["ApiError"]), path(&["Result"])],
             glob: false,
         };
-        assert_eq!(render_file(&[item]), "use crate::error::{ApiError, Result};\n");
+        assert_eq!(
+            render_file(&[item]),
+            "use crate::error::{ApiError, Result};\n"
+        );
     }
 
     #[test]
@@ -1457,7 +1550,10 @@ mod tests {
                 name: id("T"),
                 bound: Some(path(&["serde", "Serialize"])),
             }],
-            params: vec![Param::SelfRef, Param::Typed(id("path"), TypeExpr::str_ref())],
+            params: vec![
+                Param::SelfRef,
+                Param::Typed(id("path"), TypeExpr::str_ref()),
+            ],
             params_layout: Params::OnePerLine,
             ret: TypeExpr::App(path(&["Result"]), vec![TypeExpr::Path(path(&["T"]))]),
             body: Block(vec![Stmt::Tail(Expr::var("x").unwrap())]),
@@ -1508,7 +1604,10 @@ mod tests {
                 Stmt::Tail(Expr::var("b").unwrap()),
             ]),
         };
-        assert_eq!(render_file(&[Item::Fn(f)]), "fn go() {\n    a;\n\n    b\n}\n");
+        assert_eq!(
+            render_file(&[Item::Fn(f)]),
+            "fn go() {\n    a;\n\n    b\n}\n"
+        );
     }
 
     #[test]
@@ -1607,6 +1706,9 @@ mod tests {
         };
         let mut out = String::new();
         s.render(&mut out, 0);
-        assert_eq!(out, "if let Some(ref v) = cursor {\n    has_query = true;\n}");
+        assert_eq!(
+            out,
+            "if let Some(ref v) = cursor {\n    has_query = true;\n}"
+        );
     }
 }

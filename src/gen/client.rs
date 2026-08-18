@@ -6,9 +6,9 @@
 //! string, neither of which is syntax.
 
 use super::rust_ast::{
-    render_file, Attr, Block, Braces, ChainLink, Doc, Expr, FieldDecl, FieldInit, FnDef,
-    FormatTemplate, GenericParam, Ident, ImplBlock, ImplItem, Item, Param, Params, Path, Stmt,
-    StructDef, TypeExpr,
+    Attr, Block, Braces, ChainLink, Doc, Expr, FieldDecl, FieldInit, FnDef, FormatTemplate,
+    GenericParam, Ident, ImplBlock, ImplItem, Item, Param, Params, Path, Stmt, StructDef, TypeExpr,
+    render_file,
 };
 use crate::ir::{ApiSpec, AuthMethod, HttpMethod, OpParameter, Operation, ParamLocation, RustType};
 use heck::{ToSnakeCase, ToUpperCamelCase};
@@ -34,8 +34,7 @@ fn id(name: &str) -> Ident {
 ///
 /// Panics if any segment is not a legal Rust identifier.
 fn path(segments: &[&str]) -> Path {
-    Path::new(segments)
-        .unwrap_or_else(|e| panic!("code generator built an illegal Rust path: {e}"))
+    Path::new(segments).unwrap_or_else(|e| panic!("code generator built an illegal Rust path: {e}"))
 }
 
 fn var(name: &str) -> Expr {
@@ -54,7 +53,12 @@ fn result_of(inner: TypeExpr) -> TypeExpr {
 
 /// `let <name> = <init>;`
 fn let_stmt(name: &str, init: Expr) -> Stmt {
-    Stmt::Let { name: id(name), mutable: false, ty: None, init }
+    Stmt::Let {
+        name: id(name),
+        mutable: false,
+        ty: None,
+        init,
+    }
 }
 
 // ── Entry point ────────────────────────────────────────────────────────────
@@ -80,7 +84,10 @@ pub fn generate(spec: &ApiSpec) -> String {
 
     let client_struct = StructDef {
         doc: Doc(doc),
-        attrs: vec![Attr::List(id("derive"), vec![path(&["Debug"]), path(&["Clone"])])],
+        attrs: vec![Attr::List(
+            id("derive"),
+            vec![path(&["Debug"]), path(&["Clone"])],
+        )],
         public: true,
         name: id(&client_name),
         fields: vec![
@@ -112,7 +119,11 @@ pub fn generate(spec: &ApiSpec) -> String {
     }
 
     let items = vec![
-        Item::Use { path: path(&["crate", "api", "types"]), leaves: vec![], glob: true },
+        Item::Use {
+            path: path(&["crate", "api", "types"]),
+            leaves: vec![],
+            glob: true,
+        },
         Item::Use {
             path: path(&["crate", "error"]),
             leaves: vec![error.clone(), path(&["Result"])],
@@ -133,7 +144,12 @@ pub fn generate(spec: &ApiSpec) -> String {
 }
 
 fn field(name: &str, ty: TypeExpr) -> FieldDecl {
-    FieldDecl { attrs: vec![], public: false, name: id(name), ty }
+    FieldDecl {
+        attrs: vec![],
+        public: false,
+        name: id(name),
+        ty,
+    }
 }
 
 // ── Constructor and helpers ────────────────────────────────────────────────
@@ -223,7 +239,10 @@ fn url_helper() -> FnDef {
         is_async: false,
         name: id("url"),
         generics: vec![],
-        params: vec![Param::SelfRef, Param::Typed(id("path"), TypeExpr::str_ref())],
+        params: vec![
+            Param::SelfRef,
+            Param::Typed(id("path"), TypeExpr::str_ref()),
+        ],
         params_layout: Params::Inline,
         ret: TypeExpr::Ir(RustType::String),
         body: Block(vec![Stmt::Tail(body)]),
@@ -248,28 +267,78 @@ struct Helper {
 }
 
 const HTTP_HELPERS: &[Helper] = &[
-    Helper { name: "get", verb: HttpMethod::Get, has_body: false, returns_value: true },
-    Helper { name: "post", verb: HttpMethod::Post, has_body: true, returns_value: true },
-    Helper { name: "post_empty", verb: HttpMethod::Post, has_body: false, returns_value: true },
-    Helper { name: "put", verb: HttpMethod::Put, has_body: true, returns_value: true },
-    Helper { name: "patch", verb: HttpMethod::Patch, has_body: true, returns_value: true },
-    Helper { name: "delete", verb: HttpMethod::Delete, has_body: false, returns_value: true },
-    Helper { name: "delete_empty", verb: HttpMethod::Delete, has_body: false, returns_value: false },
+    Helper {
+        name: "get",
+        verb: HttpMethod::Get,
+        has_body: false,
+        returns_value: true,
+    },
+    Helper {
+        name: "post",
+        verb: HttpMethod::Post,
+        has_body: true,
+        returns_value: true,
+    },
+    Helper {
+        name: "post_empty",
+        verb: HttpMethod::Post,
+        has_body: false,
+        returns_value: true,
+    },
+    Helper {
+        name: "put",
+        verb: HttpMethod::Put,
+        has_body: true,
+        returns_value: true,
+    },
+    Helper {
+        name: "patch",
+        verb: HttpMethod::Patch,
+        has_body: true,
+        returns_value: true,
+    },
+    Helper {
+        name: "delete",
+        verb: HttpMethod::Delete,
+        has_body: false,
+        returns_value: true,
+    },
+    Helper {
+        name: "delete_empty",
+        verb: HttpMethod::Delete,
+        has_body: false,
+        returns_value: false,
+    },
     Helper {
         name: "post_empty_no_response",
         verb: HttpMethod::Post,
         has_body: false,
         returns_value: false,
     },
-    Helper { name: "post_no_response", verb: HttpMethod::Post, has_body: true, returns_value: false },
-    Helper { name: "put_no_response", verb: HttpMethod::Put, has_body: true, returns_value: false },
+    Helper {
+        name: "post_no_response",
+        verb: HttpMethod::Post,
+        has_body: true,
+        returns_value: false,
+    },
+    Helper {
+        name: "put_no_response",
+        verb: HttpMethod::Put,
+        has_body: true,
+        returns_value: false,
+    },
     Helper {
         name: "patch_no_response",
         verb: HttpMethod::Patch,
         has_body: true,
         returns_value: false,
     },
-    Helper { name: "get_empty", verb: HttpMethod::Get, has_body: false, returns_value: false },
+    Helper {
+        name: "get_empty",
+        verb: HttpMethod::Get,
+        has_body: false,
+        returns_value: false,
+    },
 ];
 
 /// The reqwest method for an HTTP verb.
@@ -291,7 +360,10 @@ fn auth_link(auth: &AuthMethod) -> ChainLink {
     match auth {
         AuthMethod::Bearer => ChainLink::Call(
             id("bearer_auth"),
-            vec![Expr::Ref(Box::new(Expr::Field(Box::new(var("self")), id("api_key"))))],
+            vec![Expr::Ref(Box::new(Expr::Field(
+                Box::new(var("self")),
+                id("api_key"),
+            )))],
         ),
         AuthMethod::Basic => ChainLink::Call(
             id("basic_auth"),
@@ -330,7 +402,10 @@ fn http_helper(h: &Helper, auth: &AuthMethod, error: &Path) -> FnDef {
         });
     }
 
-    let mut params = vec![Param::SelfRef, Param::Typed(id("path"), TypeExpr::str_ref())];
+    let mut params = vec![
+        Param::SelfRef,
+        Param::Typed(id("path"), TypeExpr::str_ref()),
+    ];
     if h.has_body {
         params.push(Param::Typed(
             id("body"),
@@ -342,7 +417,11 @@ fn http_helper(h: &Helper, auth: &AuthMethod, error: &Path) -> FnDef {
         ChainLink::Field(id("inner")),
         ChainLink::Call(
             id(verb_method(h.verb)),
-            vec![Expr::Ref(Box::new(call(var("self"), "url", vec![var("path")])))],
+            vec![Expr::Ref(Box::new(call(
+                var("self"),
+                "url",
+                vec![var("path")],
+            )))],
         ),
         auth_link(auth),
     ];
@@ -356,7 +435,11 @@ fn http_helper(h: &Helper, auth: &AuthMethod, error: &Path) -> FnDef {
         vec![Expr::Path(error.clone().join(id("Request")))],
     ));
 
-    let handler = if h.returns_value { "handle_response" } else { "handle_empty_response" };
+    let handler = if h.returns_value {
+        "handle_response"
+    } else {
+        "handle_empty_response"
+    };
 
     FnDef {
         doc: Doc::default(),
@@ -366,7 +449,11 @@ fn http_helper(h: &Helper, auth: &AuthMethod, error: &Path) -> FnDef {
         name: id(h.name),
         generics,
         params,
-        params_layout: if h.has_body { Params::OnePerLine } else { Params::Inline },
+        params_layout: if h.has_body {
+            Params::OnePerLine
+        } else {
+            Params::Inline
+        },
         ret: result_of(if h.returns_value {
             TypeExpr::Path(path(&["T"]))
         } else {
@@ -392,7 +479,10 @@ fn http_helper(h: &Helper, auth: &AuthMethod, error: &Path) -> FnDef {
 /// with the body text when it is not a success.
 fn status_guard(error: &Path) -> Vec<Stmt> {
     vec![
-        let_stmt("status", call(call(var("resp"), "status", vec![]), "as_u16", vec![])),
+        let_stmt(
+            "status",
+            call(call(var("resp"), "status", vec![]), "as_u16", vec![]),
+        ),
         Stmt::If {
             cond: Expr::Not(Box::new(call(
                 call(var("resp"), "status", vec![]),
@@ -435,7 +525,10 @@ fn handle_response(error: &Path) -> FnDef {
         ))),
     ));
     body.push(Stmt::Tail(call(
-        Expr::Call(path(&["serde_json", "from_str"]), vec![Expr::Ref(Box::new(var("text")))]),
+        Expr::Call(
+            path(&["serde_json", "from_str"]),
+            vec![Expr::Ref(Box::new(var("text")))],
+        ),
         "map_err",
         vec![Expr::Path(error.clone().join(id("Json")))],
     )));
@@ -518,10 +611,16 @@ fn path_template(op_path: &str, path_params: &[&OpParameter]) -> FormatTemplate 
 
 #[allow(clippy::too_many_lines)]
 fn operation_method(op: &Operation) -> FnDef {
-    let path_params: Vec<&OpParameter> =
-        op.parameters.iter().filter(|p| p.location == ParamLocation::Path).collect();
-    let query_params: Vec<&OpParameter> =
-        op.parameters.iter().filter(|p| p.location == ParamLocation::Query).collect();
+    let path_params: Vec<&OpParameter> = op
+        .parameters
+        .iter()
+        .filter(|p| p.location == ParamLocation::Path)
+        .collect();
+    let query_params: Vec<&OpParameter> = op
+        .parameters
+        .iter()
+        .filter(|p| p.location == ParamLocation::Query)
+        .collect();
 
     let has_body = op.request_body.is_some();
     let has_response = op.response_type.is_some();
@@ -542,7 +641,9 @@ fn operation_method(op: &Operation) -> FnDef {
     if has_body {
         params.push(Param::Typed(
             id("req"),
-            TypeExpr::Ref(Box::new(TypeExpr::Path(path(&[&op.request_body_type_name()])))),
+            TypeExpr::Ref(Box::new(TypeExpr::Path(path(&[
+                &op.request_body_type_name()
+            ])))),
         ));
     }
 
@@ -602,7 +703,9 @@ fn operation_method(op: &Operation) -> FnDef {
         params,
         params_layout: Params::OnePerLine,
         ret: result_of(
-            op.response_type.as_ref().map_or(TypeExpr::Unit, |rt| TypeExpr::Ir(rt.clone())),
+            op.response_type
+                .as_ref()
+                .map_or(TypeExpr::Unit, |rt| TypeExpr::Ir(rt.clone())),
         ),
         body: Block(body),
     }
@@ -638,7 +741,10 @@ fn query_param_stmts(p: &OpParameter) -> Vec<Stmt> {
         ))
     };
 
-    let set_flag = Stmt::Assign { lhs: var("has_query"), rhs: Expr::Bool(true) };
+    let set_flag = Stmt::Assign {
+        lhs: var("has_query"),
+        rhs: Expr::Bool(true),
+    };
 
     if p.rust_type.is_option() {
         vec![Stmt::IfLetSomeRef {
@@ -721,11 +827,7 @@ mod tests {
     use super::*;
     use crate::ir::{ApiSpec, AuthMethod, FieldDef, OpRequestBody};
 
-    fn make_spec(
-        name: &str,
-        auth: AuthMethod,
-        operations: Vec<Operation>,
-    ) -> ApiSpec {
+    fn make_spec(name: &str, auth: AuthMethod, operations: Vec<Operation>) -> ApiSpec {
         ApiSpec {
             name: name.into(),
             description: None,
@@ -782,7 +884,10 @@ mod tests {
         match auth_link(auth) {
             ChainLink::Absent => String::new(),
             link => {
-                let e = Expr::Chain { receiver: Box::new(var("x")), links: vec![link] };
+                let e = Expr::Chain {
+                    receiver: Box::new(var("x")),
+                    links: vec![link],
+                };
                 let f = FnDef {
                     doc: Doc::default(),
                     attrs: vec![],
@@ -881,7 +986,11 @@ mod tests {
 
     #[test]
     fn http_helpers_include_api_key_header() {
-        let spec = make_spec("MyApi", AuthMethod::ApiKeyHeader("X-Api-Key".into()), vec![]);
+        let spec = make_spec(
+            "MyApi",
+            AuthMethod::ApiKeyHeader("X-Api-Key".into()),
+            vec![],
+        );
         let code = generate(&spec);
         assert!(code.contains(".header(\"X-Api-Key\", &self.api_key)"));
     }
@@ -1628,7 +1737,9 @@ mod tests {
 
     #[test]
     fn is_option_type_tests() {
-        assert!(is_option_type(&RustType::Option(Box::new(RustType::String))));
+        assert!(is_option_type(&RustType::Option(Box::new(
+            RustType::String
+        ))));
         assert!(!is_option_type(&RustType::String));
         assert!(!is_option_type(&RustType::Vec(Box::new(RustType::I64))));
     }

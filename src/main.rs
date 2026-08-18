@@ -7,7 +7,11 @@ pub mod ir;
 pub mod spec;
 
 #[derive(Parser)]
-#[command(name = "mcp-forge", version, about = "Generate Rust MCP servers from OpenAPI specs")]
+#[command(
+    name = "mcp-forge",
+    version,
+    about = "Generate Rust MCP servers from OpenAPI specs"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -101,7 +105,11 @@ async fn main() -> Result<()> {
             println!("\nTypes ({}):", api.types.len());
             for t in &api.types {
                 if t.is_enum {
-                    println!("  enum {} ({} variants)", t.rust_name, t.enum_variants.len());
+                    println!(
+                        "  enum {} ({} variants)",
+                        t.rust_name,
+                        t.enum_variants.len()
+                    );
                 } else {
                     println!("  struct {} ({} fields)", t.rust_name, t.fields.len());
                 }

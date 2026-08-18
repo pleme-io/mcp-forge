@@ -41,10 +41,7 @@ fn generate_enum(out: &mut String, typedef: &TypeDef) {
     for variant in &typedef.enum_variants {
         // If there's no global rename_all that handles it, add explicit rename
         if rename.is_none() && variant.name != variant.rust_name {
-            out.push_str(&format!(
-                "    #[serde(rename = \"{}\")]\n",
-                variant.name
-            ));
+            out.push_str(&format!("    #[serde(rename = \"{}\")]\n", variant.name));
         }
         out.push_str(&format!("    {},\n", variant.rust_name));
     }
@@ -105,9 +102,7 @@ fn generate_field(out: &mut String, field: &FieldDef) {
 
     if !field.required {
         if field.rust_type.is_option() {
-            out.push_str(
-                "    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n",
-            );
+            out.push_str("    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n");
         } else {
             out.push_str("    #[serde(default)]\n");
         }
@@ -282,7 +277,11 @@ mod tests {
     fn generate_struct_with_optional_field() {
         let pet = make_struct(
             "Pet",
-            vec![make_field("tag", RustType::Option(Box::new(RustType::String)), false)],
+            vec![make_field(
+                "tag",
+                RustType::Option(Box::new(RustType::String)),
+                false,
+            )],
         );
         let spec = make_spec(vec![pet], vec![]);
         let code = generate(&spec);
@@ -404,10 +403,7 @@ mod tests {
 
     #[test]
     fn generate_response_type_gets_flatten_extra() {
-        let pet = make_struct(
-            "Pet",
-            vec![make_field("id", RustType::I64, true)],
-        );
+        let pet = make_struct("Pet", vec![make_field("id", RustType::I64, true)]);
         let op = Operation {
             id: "get_pet".into(),
             method: HttpMethod::Get,
@@ -529,10 +525,7 @@ mod tests {
             rust_type_to_string(&RustType::Option(Box::new(RustType::Bool))),
             "Option<bool>"
         );
-        assert_eq!(
-            rust_type_to_string(&RustType::Named("Foo".into())),
-            "Foo"
-        );
+        assert_eq!(rust_type_to_string(&RustType::Named("Foo".into())), "Foo");
     }
 
     #[test]
@@ -691,10 +684,7 @@ mod tests {
 
     #[test]
     fn response_type_inside_vec_gets_flatten() {
-        let pet = make_struct(
-            "Pet",
-            vec![make_field("id", RustType::I64, true)],
-        );
+        let pet = make_struct("Pet", vec![make_field("id", RustType::I64, true)]);
         let op = Operation {
             id: "list_pets".into(),
             method: HttpMethod::Get,
@@ -789,10 +779,7 @@ mod tests {
 
     #[test]
     fn value_type_field_renders_correctly() {
-        let item = make_struct(
-            "Item",
-            vec![make_field("extra", RustType::Value, true)],
-        );
+        let item = make_struct("Item", vec![make_field("extra", RustType::Value, true)]);
         let spec = make_spec(vec![item], vec![]);
         let code = generate(&spec);
         assert!(code.contains("pub extra: serde_json::Value,"));

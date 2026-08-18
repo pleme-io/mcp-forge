@@ -5,9 +5,9 @@
 //! remaining `format!` calls build *names* and prose, not syntax.
 
 use super::rust_ast::{
-    render_file, Attr, Block, Braces, Doc, Expr, FieldDecl, FieldInit, FnDef, FormatTemplate,
-    Ident, ImplBlock, ImplItem, Item, MatchArm, Param, Params, Path, Stmt, StrLit, StructDef,
-    TypeExpr, UseTree,
+    Attr, Block, Braces, Doc, Expr, FieldDecl, FieldInit, FnDef, FormatTemplate, Ident, ImplBlock,
+    ImplItem, Item, MatchArm, Param, Params, Path, Stmt, StrLit, StructDef, TypeExpr, UseTree,
+    render_file,
 };
 use crate::ir::{ApiSpec, HttpMethod, OpParameter, Operation, ParamLocation, RustType};
 use heck::{ToSnakeCase, ToUpperCamelCase};
@@ -27,8 +27,7 @@ fn id(name: &str) -> Ident {
 ///
 /// Panics if any segment is not a legal Rust identifier.
 fn path(segments: &[&str]) -> Path {
-    Path::new(segments)
-        .unwrap_or_else(|e| panic!("code generator built an illegal Rust path: {e}"))
+    Path::new(segments).unwrap_or_else(|e| panic!("code generator built an illegal Rust path: {e}"))
 }
 
 fn var(name: &str) -> Expr {
@@ -66,16 +65,38 @@ pub fn generate(spec: &ApiSpec) -> String {
 
     let mut items = vec![
         rmcp_import(),
-        Item::Use { path: path(&["serde", "Deserialize"]), leaves: vec![], glob: false },
+        Item::Use {
+            path: path(&["serde", "Deserialize"]),
+            leaves: vec![],
+            glob: false,
+        },
         Item::Blank,
-        Item::Use { path: path(&["crate", "auth"]), leaves: vec![], glob: false },
-        Item::Use { path: path(&["crate", "client", &client_type]), leaves: vec![], glob: false },
-        Item::Use { path: path(&["crate", "config", &config_type]), leaves: vec![], glob: false },
-        Item::Use { path: path(&["crate", "format"]), leaves: vec![], glob: false },
+        Item::Use {
+            path: path(&["crate", "auth"]),
+            leaves: vec![],
+            glob: false,
+        },
+        Item::Use {
+            path: path(&["crate", "client", &client_type]),
+            leaves: vec![],
+            glob: false,
+        },
+        Item::Use {
+            path: path(&["crate", "config", &config_type]),
+            leaves: vec![],
+            glob: false,
+        },
+        Item::Use {
+            path: path(&["crate", "format"]),
+            leaves: vec![],
+            glob: false,
+        },
         Item::Blank,
         Item::Comment("-- MCP tool input types --".into()),
         Item::Comment(String::new()),
-        Item::Comment("Each struct maps to an operation from the API spec. Field descriptions".into()),
+        Item::Comment(
+            "Each struct maps to an operation from the API spec. Field descriptions".into(),
+        ),
         Item::Comment("are preserved for schemars -> MCP tool schema generation.".into()),
         Item::Blank,
     ];
@@ -92,7 +113,10 @@ pub fn generate(spec: &ApiSpec) -> String {
 
     items.push(Item::Struct(StructDef {
         doc: Doc::default(),
-        attrs: vec![Attr::List(id("derive"), vec![path(&["Debug"]), path(&["Clone"])])],
+        attrs: vec![Attr::List(
+            id("derive"),
+            vec![path(&["Debug"]), path(&["Clone"])],
+        )],
         public: false,
         name: id(&mcp_struct),
         fields: vec![
@@ -106,10 +130,7 @@ pub fn generate(spec: &ApiSpec) -> String {
                 attrs: vec![],
                 public: false,
                 name: id("tool_router"),
-                ty: TypeExpr::App(
-                    path(&["ToolRouter"]),
-                    vec![TypeExpr::Path(path(&["Self"]))],
-                ),
+                ty: TypeExpr::App(path(&["ToolRouter"]), vec![TypeExpr::Path(path(&["Self"]))]),
             },
         ],
     }));
@@ -155,7 +176,10 @@ fn rmcp_import() -> Item {
             vec![leaf(&["ServerHandler"]), leaf(&["ServiceExt"])],
             vec![UseTree::Group(
                 path(&["handler", "server"]),
-                vec![leaf(&["router", "tool", "ToolRouter"]), leaf(&["wrapper", "Parameters"])],
+                vec![
+                    leaf(&["router", "tool", "ToolRouter"]),
+                    leaf(&["wrapper", "Parameters"]),
+                ],
             )],
             vec![UseTree::Group(
                 path(&["model"]),
@@ -227,7 +251,11 @@ fn input_struct(op: &Operation) -> Option<StructDef> {
         doc: Doc::default(),
         attrs: vec![Attr::List(
             id("derive"),
-            vec![path(&["Debug"]), path(&["Deserialize"]), path(&["schemars", "JsonSchema"])],
+            vec![
+                path(&["Debug"]),
+                path(&["Deserialize"]),
+                path(&["schemars", "JsonSchema"]),
+            ],
         )],
         public: false,
         name: id(&input_struct_name(op)),
@@ -264,7 +292,10 @@ fn constructor(client_type: &str, config_type: &str) -> FnDef {
         init: Expr::Try(Box::new(call(
             Expr::Call(
                 path(&["auth", "resolve_api_key"]),
-                vec![Expr::Path(path(&["None"])), Expr::Ref(Box::new(var("config")))],
+                vec![
+                    Expr::Path(path(&["None"])),
+                    Expr::Ref(Box::new(var("config"))),
+                ],
             ),
             "map_err",
             vec![stringify_err()],
@@ -277,7 +308,10 @@ fn constructor(client_type: &str, config_type: &str) -> FnDef {
             Expr::Call(
                 path(&[client_type, "new"]),
                 vec![
-                    Expr::Ref(Box::new(Expr::Field(Box::new(var("config")), id("api_url")))),
+                    Expr::Ref(Box::new(Expr::Field(
+                        Box::new(var("config")),
+                        id("api_url"),
+                    ))),
                     Expr::Ref(Box::new(var("api_key"))),
                 ],
             ),
@@ -312,7 +346,10 @@ fn constructor(client_type: &str, config_type: &str) -> FnDef {
         params_layout: Params::Inline,
         ret: TypeExpr::App(
             path(&["Result"]),
-            vec![TypeExpr::Path(path(&["Self"])), TypeExpr::Ir(RustType::String)],
+            vec![
+                TypeExpr::Path(path(&["Self"])),
+                TypeExpr::Ir(RustType::String),
+            ],
         ),
         body: Block(vec![
             load_config,
@@ -430,7 +467,10 @@ fn run_fn(mcp_struct: &str) -> FnDef {
 /// A parameter whose name is not a legal Rust identifier could never have
 /// compiled; it is emitted as literal text (braces doubled) instead.
 fn message_template(prefix: &str, method: HttpMethod, op_path: &str) -> FormatTemplate {
-    let mut template = FormatTemplate::new().lit(prefix).lit(method.to_string()).lit(" ");
+    let mut template = FormatTemplate::new()
+        .lit(prefix)
+        .lit(method.to_string())
+        .lit(" ");
     let mut rest = op_path;
 
     while let Some(open) = rest.find('{') {
@@ -457,10 +497,18 @@ fn message_template(prefix: &str, method: HttpMethod, op_path: &str) -> FormatTe
 fn client_args(op: &Operation, has_body: bool) -> Vec<Expr> {
     let mut args = Vec::new();
 
-    for p in op.parameters.iter().filter(|p| p.location == ParamLocation::Path) {
+    for p in op
+        .parameters
+        .iter()
+        .filter(|p| p.location == ParamLocation::Path)
+    {
         args.push(Expr::Ref(Box::new(input_field(&p.rust_name))));
     }
-    for p in op.parameters.iter().filter(|p| p.location == ParamLocation::Query) {
+    for p in op
+        .parameters
+        .iter()
+        .filter(|p| p.location == ParamLocation::Query)
+    {
         if p.rust_type.is_option() {
             args.push(call(input_field(&p.rust_name), "as_deref", vec![]));
         } else {
@@ -484,12 +532,21 @@ fn tool_method(op: &Operation) -> FnDef {
         .unwrap_or(&default_description);
 
     let has_params = !op.parameters.is_empty()
-        || op.request_body.as_ref().is_some_and(|b| !b.fields.is_empty());
-    let has_body = op.request_body.as_ref().is_some_and(|b| !b.fields.is_empty());
+        || op
+            .request_body
+            .as_ref()
+            .is_some_and(|b| !b.fields.is_empty());
+    let has_body = op
+        .request_body
+        .as_ref()
+        .is_some_and(|b| !b.fields.is_empty());
 
     // Parameters(input): Parameters<XInput>  /  Parameters(_): Parameters<serde_json::Value>
     let (binding, input_ty) = if has_params {
-        (var("input"), TypeExpr::Path(path(&[&input_struct_name(op)])))
+        (
+            var("input"),
+            TypeExpr::Path(path(&[&input_struct_name(op)])),
+        )
     } else {
         (var("_"), TypeExpr::Ir(RustType::Value))
     };
@@ -513,10 +570,7 @@ fn tool_method(op: &Operation) -> FnDef {
     let ok_arm = if is_simple_action {
         MatchArm {
             pattern: Expr::Call(path(&["Ok"]), vec![var("_")]),
-            body: Expr::Format(
-                message_template("Success: ", op.method, &op.path),
-                vec![],
-            ),
+            body: Expr::Format(message_template("Success: ", op.method, &op.path), vec![]),
         }
     } else {
         MatchArm {
@@ -938,10 +992,7 @@ mod tests {
 
     #[test]
     fn input_field_type_optional_wraps() {
-        assert_eq!(
-            input_field_type(&RustType::String, false),
-            "Option<String>"
-        );
+        assert_eq!(input_field_type(&RustType::String, false), "Option<String>");
     }
 
     #[test]
@@ -964,15 +1015,14 @@ mod tests {
             rust_type_string(&RustType::Vec(Box::new(RustType::I64))),
             "Vec<i64>"
         );
-        assert_eq!(
-            rust_type_string(&RustType::Named("Foo".into())),
-            "Foo"
-        );
+        assert_eq!(rust_type_string(&RustType::Named("Foo".into())), "Foo");
     }
 
     #[test]
     fn is_option_type_true() {
-        assert!(is_option_type(&RustType::Option(Box::new(RustType::String))));
+        assert!(is_option_type(&RustType::Option(Box::new(
+            RustType::String
+        ))));
     }
 
     #[test]

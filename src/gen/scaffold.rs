@@ -27,10 +27,7 @@ pub fn generate_scaffold(spec: &ApiSpec) -> Vec<(String, String)> {
     files.push(("src/auth.rs".into(), generate_auth_rs(spec)));
     files.push(("src/api/mod.rs".into(), generate_api_mod_rs()));
     files.push(("flake.nix".into(), generate_flake_nix(spec)));
-    files.push((
-        "module/default.nix".into(),
-        generate_module_nix(spec),
-    ));
+    files.push(("module/default.nix".into(), generate_module_nix(spec)));
     files.push((".gitignore".into(), generate_gitignore()));
 
     files
@@ -39,10 +36,7 @@ pub fn generate_scaffold(spec: &ApiSpec) -> Vec<(String, String)> {
 fn generate_cargo_toml(spec: &ApiSpec) -> String {
     let name = spec.name.to_snake_case();
     let default_description = format!("Rust CLI + MCP server for {}", spec.name);
-    let description = spec
-        .description
-        .as_deref()
-        .unwrap_or(&default_description);
+    let description = spec.description.as_deref().unwrap_or(&default_description);
     let version = &spec.version;
 
     format!(
@@ -92,10 +86,7 @@ fn generate_main_rs(spec: &ApiSpec) -> String {
     let name = spec.name.to_snake_case();
     let config_type = format!("{}Config", spec.name.to_upper_camel_case());
     let default_description = format!("{name} CLI + MCP server");
-    let description = spec
-        .description
-        .as_deref()
-        .unwrap_or(&default_description);
+    let description = spec.description.as_deref().unwrap_or(&default_description);
 
     format!(
         r#"use clap::Parser;
@@ -166,10 +157,7 @@ fn init_tracing(json: bool) {{
 
 fn generate_error_rs(spec: &ApiSpec) -> String {
     let error_name = format!("{}Error", spec.name.to_upper_camel_case());
-    let env_var = format!(
-        "{}_API_KEY",
-        spec.name.to_snake_case().to_uppercase()
-    );
+    let env_var = format!("{}_API_KEY", spec.name.to_snake_case().to_uppercase());
 
     format!(
         r#"use std::path::PathBuf;
@@ -282,10 +270,7 @@ impl {config_type} {{
 fn generate_auth_rs(spec: &ApiSpec) -> String {
     let config_type = format!("{}Config", spec.name.to_upper_camel_case());
     let error_name = format!("{}Error", spec.name.to_upper_camel_case());
-    let env_var = format!(
-        "{}_API_KEY",
-        spec.name.to_snake_case().to_uppercase()
-    );
+    let env_var = format!("{}_API_KEY", spec.name.to_snake_case().to_uppercase());
 
     format!(
         r#"use crate::config::{config_type};
@@ -344,10 +329,7 @@ fn generate_api_mod_rs() -> String {
 fn generate_flake_nix(spec: &ApiSpec) -> String {
     let app_name = spec.name.to_snake_case();
     let default_description = format!("{app_name} -- Rust CLI + MCP server");
-    let description = spec
-        .description
-        .as_deref()
-        .unwrap_or(&default_description);
+    let description = spec.description.as_deref().unwrap_or(&default_description);
 
     format!(
         r#"{{

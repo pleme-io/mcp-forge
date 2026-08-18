@@ -122,9 +122,7 @@ fn generate_list_format(
             // Find the TypeDef for the inner type
             if let Some(inner_typedef) = spec.types.iter().find(|t| t.rust_name == *inner_type) {
                 // Format each item compactly
-                out.push_str(&format!(
-                    "    for item in &data.{field_name} {{\n"
-                ));
+                out.push_str(&format!("    for item in &data.{field_name} {{\n"));
                 generate_compact_item_format(out, inner_typedef);
                 out.push_str("    }\n");
             } else {
@@ -294,8 +292,8 @@ fn is_vec_type(rt: &RustType) -> bool {
 mod tests {
     use super::*;
     use crate::r#gen::testutil::{
-        make_field, make_get_op as make_get_op_with_response,
-        make_spec_with as make_spec, make_struct,
+        make_field, make_get_op as make_get_op_with_response, make_spec_with as make_spec,
+        make_struct,
     };
     use crate::ir::HttpMethod;
 
@@ -416,8 +414,7 @@ mod tests {
 
     #[test]
     fn generates_generic_format_for_unknown_type() {
-        let op =
-            make_get_op_with_response("get_unknown", RustType::Named("UnknownType".into()));
+        let op = make_get_op_with_response("get_unknown", RustType::Named("UnknownType".into()));
         let spec = make_spec(vec![], vec![op]);
         let code = generate(&spec);
         assert!(code.contains("pub fn format_get_unknown(data: &UnknownType) -> String"));
@@ -435,10 +432,7 @@ mod tests {
 
     #[test]
     fn duplicate_response_type_gets_alias() {
-        let item = make_struct(
-            "Item",
-            vec![make_field("id", RustType::I64, true)],
-        );
+        let item = make_struct("Item", vec![make_field("id", RustType::I64, true)]);
         let op1 = make_get_op_with_response("get_item_v1", RustType::Named("Item".into()));
         let op2 = make_get_op_with_response("get_item_v2", RustType::Named("Item".into()));
         let spec = make_spec(vec![item], vec![op1, op2]);
@@ -461,7 +455,11 @@ mod tests {
                     RustType::Vec(Box::new(RustType::Named("Item".into()))),
                     true,
                 ),
-                make_field("cursor", RustType::Option(Box::new(RustType::String)), false),
+                make_field(
+                    "cursor",
+                    RustType::Option(Box::new(RustType::String)),
+                    false,
+                ),
             ],
         );
         let op = make_get_op_with_response("list_items", RustType::Named("ItemList".into()));
@@ -488,8 +486,16 @@ mod tests {
     #[test]
     fn is_display_field_scalars() {
         assert!(is_display_field(&make_field("id", RustType::I64, true)));
-        assert!(is_display_field(&make_field("name", RustType::String, true)));
-        assert!(is_display_field(&make_field("active", RustType::Bool, true)));
+        assert!(is_display_field(&make_field(
+            "name",
+            RustType::String,
+            true
+        )));
+        assert!(is_display_field(&make_field(
+            "active",
+            RustType::Bool,
+            true
+        )));
         assert!(is_display_field(&make_field(
             "tag",
             RustType::Option(Box::new(RustType::String)),
@@ -508,12 +514,18 @@ mod tests {
 
     #[test]
     fn is_display_field_rejects_value() {
-        assert!(!is_display_field(&make_field("data", RustType::Value, true)));
+        assert!(!is_display_field(&make_field(
+            "data",
+            RustType::Value,
+            true
+        )));
     }
 
     #[test]
     fn is_option_type_tests() {
-        assert!(is_option_type(&RustType::Option(Box::new(RustType::String))));
+        assert!(is_option_type(&RustType::Option(Box::new(
+            RustType::String
+        ))));
         assert!(!is_option_type(&RustType::String));
     }
 
@@ -539,10 +551,7 @@ mod tests {
             rust_type_to_string(&RustType::Option(Box::new(RustType::I64))),
             "Option<i64>"
         );
-        assert_eq!(
-            rust_type_to_string(&RustType::Named("Foo".into())),
-            "Foo"
-        );
+        assert_eq!(rust_type_to_string(&RustType::Named("Foo".into())), "Foo");
     }
 
     #[test]
@@ -571,11 +580,7 @@ mod tests {
             "Stats",
             vec![
                 make_field("count", RustType::I64, true),
-                make_field(
-                    "tags",
-                    RustType::Vec(Box::new(RustType::String)),
-                    true,
-                ),
+                make_field("tags", RustType::Vec(Box::new(RustType::String)), true),
             ],
         );
         let op = make_get_op_with_response("get_stats", RustType::Named("Stats".into()));
@@ -651,11 +656,7 @@ mod tests {
             "Blob",
             vec![
                 make_field("data", RustType::Value, true),
-                make_field(
-                    "nested",
-                    RustType::Vec(Box::new(RustType::String)),
-                    true,
-                ),
+                make_field("nested", RustType::Vec(Box::new(RustType::String)), true),
             ],
         );
         let list_resp = make_struct(
@@ -669,7 +670,10 @@ mod tests {
         let op = make_get_op_with_response("list_blobs", RustType::Named("BlobList".into()));
         let spec = make_spec(vec![inner, list_resp], vec![op]);
         let code = generate(&spec);
-        assert!(code.contains("{:?}"), "should use Debug for items with no display fields");
+        assert!(
+            code.contains("{:?}"),
+            "should use Debug for items with no display fields"
+        );
     }
 
     // -- Option fields in compact item format use as_deref --
@@ -804,8 +808,7 @@ mod tests {
                 true,
             )],
         );
-        let op =
-            make_get_op_with_response("list_mystery", RustType::Named("MysteryList".into()));
+        let op = make_get_op_with_response("list_mystery", RustType::Named("MysteryList".into()));
         let spec = make_spec(vec![list_resp], vec![op]);
         let code = generate(&spec);
         assert!(code.contains("{:?}"), "unknown inner type should use Debug");

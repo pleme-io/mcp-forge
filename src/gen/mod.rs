@@ -46,16 +46,16 @@ pub fn generate(spec: &ApiSpec, output_dir: impl AsRef<Path>) -> Result<()> {
     fs::create_dir_all(&api_dir)?;
     fs::create_dir_all(&module_dir)?;
 
-    scaffold::generate_scaffold(spec)
-        .into_iter()
-        .try_for_each(|(path, content)| -> Result<()> {
+    scaffold::generate_scaffold(spec).into_iter().try_for_each(
+        |(path, content)| -> Result<()> {
             let file_path = output_dir.join(&path);
             if let Some(parent) = file_path.parent() {
                 fs::create_dir_all(parent)?;
             }
             fs::write(&file_path, content)?;
             Ok(())
-        })?;
+        },
+    )?;
 
     let generated_files: &[(&str, String)] = &[
         ("api/types.rs", types::generate(spec)),
@@ -76,8 +76,8 @@ pub fn generate(spec: &ApiSpec, output_dir: impl AsRef<Path>) -> Result<()> {
 mod tests {
     use super::*;
     use crate::ir::{
-        AuthMethod, EnumVariant, ErrorResponse, FieldDef, HttpMethod, OpParameter,
-        OpRequestBody, Operation, ParamLocation, RustType, TypeDef,
+        AuthMethod, EnumVariant, ErrorResponse, FieldDef, HttpMethod, OpParameter, OpRequestBody,
+        Operation, ParamLocation, RustType, TypeDef,
     };
 
     /// Build a realistic `ApiSpec` for end-to-end generation tests.
@@ -104,9 +104,7 @@ mod tests {
                         description: Some("Max items to return".into()),
                     }],
                     request_body: None,
-                    response_type: Some(RustType::Vec(Box::new(RustType::Named(
-                        "Pet".into(),
-                    )))),
+                    response_type: Some(RustType::Vec(Box::new(RustType::Named("Pet".into())))),
                     errors: vec![],
                 },
                 Operation {
@@ -311,17 +309,9 @@ mod tests {
 
         for file in &expected_files {
             let path = dir.path().join(file);
-            assert!(
-                path.exists(),
-                "expected file not found: {}",
-                path.display()
-            );
+            assert!(path.exists(), "expected file not found: {}", path.display());
             let content = std::fs::read_to_string(&path).unwrap();
-            assert!(
-                !content.is_empty(),
-                "file is empty: {}",
-                path.display()
-            );
+            assert!(!content.is_empty(), "file is empty: {}", path.display());
         }
     }
 
@@ -760,34 +750,161 @@ mod tests {
 
         vec![
             // Static path, no params, no body, with/without response.
-            op("static_get", HttpMethod::Get, "/x", vec![], None, named("X")),
-            op("static_get_empty", HttpMethod::Get, "/ping", vec![], None, None),
-            op("static_post_nobody", HttpMethod::Post, "/kick", vec![], None, named("X")),
-            op("static_post_nobody_noresp", HttpMethod::Post, "/kick2", vec![], None, None),
+            op(
+                "static_get",
+                HttpMethod::Get,
+                "/x",
+                vec![],
+                None,
+                named("X"),
+            ),
+            op(
+                "static_get_empty",
+                HttpMethod::Get,
+                "/ping",
+                vec![],
+                None,
+                None,
+            ),
+            op(
+                "static_post_nobody",
+                HttpMethod::Post,
+                "/kick",
+                vec![],
+                None,
+                named("X"),
+            ),
+            op(
+                "static_post_nobody_noresp",
+                HttpMethod::Post,
+                "/kick2",
+                vec![],
+                None,
+                None,
+            ),
             // Static path with a request body.
-            op("static_post_body", HttpMethod::Post, "/x", vec![], Some(body("MkX", vec![f("name")])), named("X")),
-            op("static_post_body_noresp", HttpMethod::Post, "/notify", vec![], Some(body("Notify", vec![f("msg")])), None),
+            op(
+                "static_post_body",
+                HttpMethod::Post,
+                "/x",
+                vec![],
+                Some(body("MkX", vec![f("name")])),
+                named("X"),
+            ),
+            op(
+                "static_post_body_noresp",
+                HttpMethod::Post,
+                "/notify",
+                vec![],
+                Some(body("Notify", vec![f("msg")])),
+                None,
+            ),
             // Path parameters only.
-            op("one_path_param", HttpMethod::Get, "/x/{xId}", vec![p("xId", "x_id")], None, named("X")),
-            op("two_path_params", HttpMethod::Get, "/a/{aId}/b/{bId}", vec![p("aId", "a_id"), p("bId", "b_id")], None, named("X")),
-            op("path_param_put_body", HttpMethod::Put, "/x/{xId}", vec![p("xId", "x_id")], Some(body("UpX", vec![f("name")])), named("X")),
-            op("path_param_put_noresp", HttpMethod::Put, "/y/{yId}", vec![p("yId", "y_id")], Some(body("UpY", vec![f("name")])), None),
-            op("path_param_patch_body", HttpMethod::Patch, "/x/{xId}", vec![p("xId", "x_id")], Some(body("PatchX", vec![f("name")])), named("X")),
-            op("path_param_patch_noresp", HttpMethod::Patch, "/z/{zId}", vec![p("zId", "z_id")], Some(body("PatchZ", vec![f("name")])), None),
+            op(
+                "one_path_param",
+                HttpMethod::Get,
+                "/x/{xId}",
+                vec![p("xId", "x_id")],
+                None,
+                named("X"),
+            ),
+            op(
+                "two_path_params",
+                HttpMethod::Get,
+                "/a/{aId}/b/{bId}",
+                vec![p("aId", "a_id"), p("bId", "b_id")],
+                None,
+                named("X"),
+            ),
+            op(
+                "path_param_put_body",
+                HttpMethod::Put,
+                "/x/{xId}",
+                vec![p("xId", "x_id")],
+                Some(body("UpX", vec![f("name")])),
+                named("X"),
+            ),
+            op(
+                "path_param_put_noresp",
+                HttpMethod::Put,
+                "/y/{yId}",
+                vec![p("yId", "y_id")],
+                Some(body("UpY", vec![f("name")])),
+                None,
+            ),
+            op(
+                "path_param_patch_body",
+                HttpMethod::Patch,
+                "/x/{xId}",
+                vec![p("xId", "x_id")],
+                Some(body("PatchX", vec![f("name")])),
+                named("X"),
+            ),
+            op(
+                "path_param_patch_noresp",
+                HttpMethod::Patch,
+                "/z/{zId}",
+                vec![p("zId", "z_id")],
+                Some(body("PatchZ", vec![f("name")])),
+                None,
+            ),
             // Delete, both response shapes. Also the mcp "simple action" branch.
-            op("delete_with_resp", HttpMethod::Delete, "/x/{xId}", vec![p("xId", "x_id")], None, named("Gone")),
-            op("delete_no_resp", HttpMethod::Delete, "/y/{yId}", vec![p("yId", "y_id")], None, None),
+            op(
+                "delete_with_resp",
+                HttpMethod::Delete,
+                "/x/{xId}",
+                vec![p("xId", "x_id")],
+                None,
+                named("Gone"),
+            ),
+            op(
+                "delete_no_resp",
+                HttpMethod::Delete,
+                "/y/{yId}",
+                vec![p("yId", "y_id")],
+                None,
+                None,
+            ),
             // The mcp simple-action branch keyed on the `stop` id prefix.
-            op("stop_thing", HttpMethod::Post, "/stop", vec![], None, named("X")),
+            op(
+                "stop_thing",
+                HttpMethod::Post,
+                "/stop",
+                vec![],
+                None,
+                named("X"),
+            ),
             // Query parameters: required, optional, and mixed ordering.
-            op("query_required", HttpMethod::Get, "/q1", vec![q("limit", true, RustType::I64)], None, named("X")),
-            op("query_optional", HttpMethod::Get, "/q2", vec![q("cursor", false, RustType::Option(Box::new(RustType::String)))], None, named("X")),
+            op(
+                "query_required",
+                HttpMethod::Get,
+                "/q1",
+                vec![q("limit", true, RustType::I64)],
+                None,
+                named("X"),
+            ),
+            op(
+                "query_optional",
+                HttpMethod::Get,
+                "/q2",
+                vec![q(
+                    "cursor",
+                    false,
+                    RustType::Option(Box::new(RustType::String)),
+                )],
+                None,
+                named("X"),
+            ),
             op(
                 "query_optional_then_required",
                 HttpMethod::Get,
                 "/q3",
                 vec![
-                    q("status", false, RustType::Option(Box::new(RustType::String))),
+                    q(
+                        "status",
+                        false,
+                        RustType::Option(Box::new(RustType::String)),
+                    ),
                     q("limit", true, RustType::I64),
                 ],
                 None,
@@ -806,7 +923,10 @@ mod tests {
                 "path_and_query",
                 HttpMethod::Get,
                 "/u/{uId}/r",
-                vec![p("uId", "u_id"), q("page", false, RustType::Option(Box::new(RustType::I64)))],
+                vec![
+                    p("uId", "u_id"),
+                    q("page", false, RustType::Option(Box::new(RustType::I64))),
+                ],
                 None,
                 named("X"),
             ),
@@ -976,8 +1096,7 @@ components:
       in: header
       name: X-Widget-Key
 "##;
-        let openapi: crate::spec::OpenApiSpec =
-            serde_yaml_ng::from_str(yaml).unwrap();
+        let openapi: crate::spec::OpenApiSpec = serde_yaml_ng::from_str(yaml).unwrap();
         let api = crate::ir::ApiSpec::from_openapi(&openapi);
 
         assert_eq!(api.name, "Widget API");
