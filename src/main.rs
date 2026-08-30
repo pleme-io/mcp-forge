@@ -42,16 +42,12 @@ enum Command {
     },
 }
 
+/// Read an `OpenAPI` spec off disk and lower it into the generator's IR.
+///
+/// Reading + format detection + parsing belong to `sekkei::load_spec`; this
+/// wrapper exists solely for the `OpenApiSpec` → [`ir::ApiSpec`] conversion.
 fn load_spec(path: &Path) -> Result<ir::ApiSpec> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("failed to read spec: {}", path.display()))?;
-
-    let openapi: spec::OpenApiSpec = if path.extension().is_some_and(|e| e == "json") {
-        serde_json::from_str(&content)?
-    } else {
-        serde_yaml_ng::from_str(&content)?
-    };
-
+    let openapi = sekkei::load_spec(path)?;
     Ok(ir::ApiSpec::from_openapi(&openapi))
 }
 
