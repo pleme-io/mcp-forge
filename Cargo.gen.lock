@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "fc43579fabbac9b5c3339a74e617f63d06a9965ef6112aaf2a8623c7478f9476",
+  "cargo_lock_sha256": "92334c11720fedda652976befff5fc61d03baaa6b34d27b062b34f9c497e733f",
   "manifest_sha256": {
-    "Cargo.toml": "59741ea3b136ad8b4da33f109633b58d9898be617c7311592d8219528801ddc3"
+    "Cargo.toml": "9b71ed5a3b5f66953187d987748a9b90c24ab7d302ab4b5109322814e06bbf3d"
   },
   "target_resolves": {
     "base": {
@@ -257,7 +257,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.3",
+            "package_key": "syn-3.0.4",
             "kind": "normal",
             "features": [
               "full"
@@ -465,7 +465,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "indexmap-2.14.0": {
+      "indexmap-2.14.1": {
         "runtime_dependencies": [
           {
             "name": "equivalent",
@@ -573,10 +573,11 @@
           "std"
         ]
       },
-      "log-0.4.33": {
+      "log-0.4.34": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": [
+          "alloc",
           "std"
         ]
       },
@@ -600,7 +601,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "mcp-forge-0.1.5": {
+      "mcp-forge-0.1.6": {
         "runtime_dependencies": [
           {
             "name": "anyhow",
@@ -636,7 +637,7 @@
           },
           {
             "name": "sekkei",
-            "package_key": "sekkei-0.1.2",
+            "package_key": "sekkei-0.1.3",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -848,7 +849,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "sekkei-0.1.2": {
+      "sekkei-0.1.3": {
         "runtime_dependencies": [
           {
             "name": "serde",
@@ -965,7 +966,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.3",
+            "package_key": "syn-3.0.4",
             "kind": "normal",
             "features": [
               "clone-impls",
@@ -1038,7 +1039,7 @@
         "runtime_dependencies": [
           {
             "name": "indexmap",
-            "package_key": "indexmap-2.14.0",
+            "package_key": "indexmap-2.14.1",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1115,7 +1116,7 @@
           "text"
         ]
       },
-      "smallvec-1.15.2": {
+      "smallvec-1.16.0": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
@@ -1169,7 +1170,7 @@
           "visit-mut"
         ]
       },
-      "syn-3.0.3": {
+      "syn-3.0.4": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -1309,7 +1310,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.3",
+            "package_key": "syn-3.0.4",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1393,7 +1394,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-3.0.3",
+            "package_key": "syn-3.0.4",
             "kind": "normal",
             "features": [
               "full"
@@ -1516,7 +1517,7 @@
         "runtime_dependencies": [
           {
             "name": "log",
-            "package_key": "log-0.4.33",
+            "package_key": "log-0.4.34",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1607,7 +1608,7 @@
           },
           {
             "name": "smallvec",
-            "package_key": "smallvec-1.15.2",
+            "package_key": "smallvec-1.16.0",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -2408,7 +2409,7 @@
     "heck-0.5.0": {
       "edition": "2021"
     },
-    "indexmap-2.14.0": {
+    "indexmap-2.14.1": {
       "edition": "2024"
     },
     "insta-1.48.0": {
@@ -2430,13 +2431,13 @@
     "linux-raw-sys-0.12.1": {
       "edition": "2021"
     },
-    "log-0.4.33": {
+    "log-0.4.34": {
       "edition": "2021"
     },
     "matchers-0.2.0": {
       "edition": "2018"
     },
-    "mcp-forge-0.1.5": {
+    "mcp-forge-0.1.6": {
       "edition": "2024",
       "binaries": [
         {
@@ -2481,7 +2482,7 @@
     "ryu-1.0.23": {
       "edition": "2021"
     },
-    "sekkei-0.1.2": {
+    "sekkei-0.1.3": {
       "edition": "2024"
     },
     "serde-1.0.229": {
@@ -2509,7 +2510,7 @@
     "similar-2.7.0": {
       "edition": "2018"
     },
-    "smallvec-1.15.2": {
+    "smallvec-1.16.0": {
       "edition": "2018"
     },
     "strsim-0.11.1": {
@@ -2518,7 +2519,7 @@
     "syn-2.0.119": {
       "edition": "2021"
     },
-    "syn-3.0.3": {
+    "syn-3.0.4": {
       "edition": "2021"
     },
     "tempfile-3.27.0": {
